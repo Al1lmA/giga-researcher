@@ -159,8 +159,8 @@ async def mr_report(websocket: WebSocket, task: str, image=False): #
 
     total_steps = 13 #Количество шагов (блоков)
     current_step = 0
-    
-    researcher = GPTResearcher(source_urls=None, config_path=None,  websocket=websocket) #
+    researcher = GPTResearcher(config_path=None,  websocket=websocket) #
+    #researcher = GPTResearcher(source_urls=None, config_path=None,  websocket=websocket) #
     context = []
     sources = []
     image_list = []
