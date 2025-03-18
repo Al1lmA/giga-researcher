@@ -1,0 +1,10 @@
+__pycache__
+data/
+outputs
+.vscode
+.env
+test.txt
+test.pptx
+card.py
+venv
+temp_image.jpg

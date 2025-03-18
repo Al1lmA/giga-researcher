@@ -1,0 +1,26 @@
+cd giga_researcher
+python -m uvicorn main:app --reload
+
+
+sudo vi /etc/nginx/sites-enabled/fastapi_nginx
+sudo service nginx restart
+
+
+sudo vi /etc/systemd/system/qcheck.service
+
+sudo systemctl start qcheck.service
+
+journalctl -u qcheck
+
+
+ERROR:
+
+Importing chat models from gigachain is deprecated. 
+Importing from gigachain will no longer be supported as of gigachain==0.2.0. Please import from gigachain-community instead:
+
+/qcheck/venv/lib/python3.11/site-packages/langchain_community/adapters/openai.py
+models = importlib.import_module("langchain.chat_models") change to langchain_community.chat_models
+
+
+webdriver
+sudo vim  ~/.wdm/drivers.json 
