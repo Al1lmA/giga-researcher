@@ -1,3 +1,9 @@
+import sys
+import os
+
+# Добавляем путь к корню проекта
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
+
 import time
 from gpt_researcher.config import Config
 from gpt_researcher.master.functions import *
@@ -14,7 +20,7 @@ from langchain_core.runnables import RunnablePassthrough
 class GPTResearcher:
 
     def __init__(self, query='', config_path=None, websocket=None):
-
+        logger.info("Инициализация GPTResearcher...")
         self.query = query
         self.agent = None
         self.role = None
@@ -23,6 +29,7 @@ class GPTResearcher:
         self.retriever = get_retriever(self.cfg.retriever)
         self.context = []
         self.memory = Memory(self.cfg.embedding_provider)
+        logger.info("GPTResearcher успешно создан!")
         self.visited_urls = set()
 
     async def run(self, facts=''):
