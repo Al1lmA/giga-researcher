@@ -57,6 +57,7 @@ class WebSocketManager:
     async def run_agent(self, task, report_type, websocket):
         """Run the agent."""
         start_time = datetime.datetime.now()
+        logger.info(f"report_type:  {report_type}")
         logger.info(f"Agent start:  {start_time}")
 
         match report_type:
@@ -68,6 +69,7 @@ class WebSocketManager:
                     await websocket.send_json({"type": "logs", "output": "Введите корректный ИНН"})
                     return
             case "mr_report":
+                logger.info("Running mr_report...")
                 pptx_path, pdf_path, sources_path = await mr_report(websocket=websocket, task=task.strip(), image=False)
                 await websocket.send_json({"type": "path", "output": pptx_path, "pdf_output" : pdf_path, "sources_output":sources_path})
             case "mr_report_image":
