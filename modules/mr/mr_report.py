@@ -1,3 +1,6 @@
+import sys
+import os
+
 from loguru import logger
 from pptx import Presentation
 from pptx.dml.color import RGBColor
@@ -117,7 +120,6 @@ async def make_mr_pptx(task, qna_list):
     template_path = 'modules/mr/Market_Research_2.pptx'
     # Создание нового документа на основе шаблона
     prs = Presentation(template_path)
-
     # Титульный слайд
     slide = prs.slides[0] 
     slide.shapes.title.text =  f'{task}'.upper()
@@ -127,9 +129,13 @@ async def make_mr_pptx(task, qna_list):
         for question, answer in qna.items():
             prs = await add_text(title=question, prs=prs, text=answer)
     
-    
     # Сохранение созданной презентации
-    pptx_path = f"/home/TIsAmbrosyeva/giga_researcher/outputs/mr/{task}.pptx"
-    prs.save(pptx_path)
-
+    BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+    pptx_path = os.path.join(BASE_DIR, "outputs", "mr", f"{task}.pptx")
+    # pptx_path = f"/home/TIsAmbrosyeva/giga_researcher/outputs/mr/{task}.pptx"
+    try:
+        prs.save(pptx_path)
+    except Exception as err:
+        logger.error(f"Ошибка при сохранении: {err}")
+    logger.info('save prs')
     return pptx_path
