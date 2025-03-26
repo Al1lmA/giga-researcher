@@ -72,7 +72,8 @@ def format_docs(docs):
 async def chain_with_source():
     model = GigaChat(
 	# model="GigaChat-Pro",
-	model="GigaChat-Plus",
+	# model="GigaChat-Plus",
+    model="GigaChat-Max",
 	verify_ssl_certs=False,
 	profanity_check=False
     )
