@@ -57,7 +57,12 @@ async def get_egrul(cls = Company):
             await asyncio.sleep(1)
     except Exception:
         pass
-
+    logger.info('Ответ из ЕГРЮЛ')
+    logger.info(jsn.keys())
+    if 'rows' in jsn:
+        pass
+    else:
+        logger.info(jsn)
     try:
         item = (jsn["rows"])[0]
         if str(item['tot']) != '0':
@@ -94,27 +99,50 @@ async def make_card(cls = Company):
         pages = pdf.pages
         df1 = pd.DataFrame()
 
+        logger.info(f"PDF состоит из {len(pages)} страниц")
+
         for i in range(len(pages)):
             page = pdf.pages[i]
             df = pd.DataFrame(page.extract_table(), columns=['a', 'b', 'c'])
             df1 = pd.concat([df1, df])
-            
+        
+        logger.info(f"Датафрейм состоит из {len(df1)} строк")
+        """
+        for i in range(30):
+            logger.info(f"{i} строка -- значение {df1.loc[i, 'b']}")
+        """
+        fio = 'Фамилия\nИмя\nОтчество'
+
+        if len(df1.loc[df1['b'] == fio])>0:
+            ceo = df1.loc[df1['b'] == fio]
+        else:
+            ceo = df1.loc[df1['b'] == 'Фамилия\nИмя']
+        
+        logger.info(f"Датафрейм ceo состоит из {len(ceo)} строк")
+
+        logger.info("Штаб-квартира"+df1.loc[df1['b'] == 'Адрес юридического лица']['c'].str.replace('\n', ' ').values[0])
+        logger.info("CEO компании"+ceo['c'].str.replace('\n', ' ').values[0])
+        logger.info("Объём финансирования"+df1.loc[df1['b'] == 'Размер (в рублях)']['c'].str.replace('\n', ' ').values.sum())
+        logger.info("Основной вид деятельности"+df1.loc[df1['b'] == 'Код и наименование вида деятельности']['c'].str.replace('\n', ' ').values[0])
+        
         cls.card = {"Дата регистрации компании": '',
         "Штаб-квартира": df1.loc[df1['b'] == 'Адрес юридического лица']['c'].str.replace('\n', ' ').values[0],
-        "CEO компании": df1.loc[df1['b'] == 'Фамилия\nИмя\nОтчество']['c'].str.replace('\n', ' ').values[0],
+        "CEO компании": ceo['c'].str.replace('\n', ' ').values[0],
         "Объём финансирования": df1.loc[df1['b'] == 'Размер (в рублях)']['c'].str.replace('\n', ' ').values.sum(),
         "Основной вид деятельности": df1.loc[df1['b'] == 'Код и наименование вида деятельности']['c'].str.replace('\n', ' ').values[0],
         "Юридическое лицо": df1.loc[df1['b'] == 'Полное наименование на русском языке']['c'].str.replace('\n', ' ').values[0]}
+        
     except Exception as er:
         logger.error(er)
     try:
         cls.card['Дата регистрации компании'] = df1.loc[df1['b'] == 'Дата регистрации до 1 июля 2002 года']['c'].values[0]
     except Exception as er:
-        logger.error(er)
+        #logger.error(er)
         try:
             cls.card['Дата регистрации компании'] = df1.loc[df1['b'] == 'Дата регистрации']['c'].values[0]
         except Exception as er:
             logger.error(er)
+
     cls.org_name = df1['c'][6].values[0].replace('\n','')
     cls.org_name = cls.org_name.replace('\"', '')
     # .replace('ООО', '').replace('ЗАО', '').replace('ОАО', '').replace('АО', '').replace('ПАО', '')
