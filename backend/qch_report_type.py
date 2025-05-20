@@ -25,6 +25,7 @@ async def qcheck_report(websocket: WebSocket, task: str):
 	#  Сбор данных из ЕГРЮЛ
 	try:
 		comp = await get_egrul(comp)
+		logger.info('В qch_report get_egrul')
 		# current_step += 1
 		# await update_progress(websocket, current_step, total_steps)
 	except Exception as er:
@@ -34,9 +35,10 @@ async def qcheck_report(websocket: WebSocket, task: str):
 	
 	current_step += 1
 	await update_progress(websocket, current_step, total_steps)
-
+	logger.info('В qch_report get_egrul - after update_progress')
 	try:
 		comp = await make_card(comp)
+		logger.info('В qch_report get_egrul - after make_card')
 		# current_step += 1
 		# await update_progress(websocket, current_step, total_steps)
 		await websocket.send_json({"type": "logs", "output": f"\nПолучены данные из ЕГРЮЛ\n\n"})

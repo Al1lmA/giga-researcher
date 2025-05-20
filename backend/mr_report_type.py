@@ -22,6 +22,7 @@ from io import BytesIO
 from base64 import b64encode
 from time import sleep
 from bs4 import BeautifulSoup
+import time
 
 from modules.mr.mr_sources import make_sources_file
 
@@ -69,13 +70,27 @@ async def get_headings(query, agent_role_prompt, cfg):
 def format_docs(docs):
 	return "\n\n".join([doc.page_content for doc in docs])
 
+
+
+def log_step(step_name: str):
+    def wrapper(x):
+        logger.info(f"[STEP: {step_name}] START")
+        start = time.time()
+        result = x
+        duration = time.time() - start
+        logger.info(f"[STEP: {step_name}] END — took {duration:.2f}s")
+        return result
+    return RunnableLambda(wrapper)
+
 async def chain_with_source():
     model = GigaChat(
-	# model="GigaChat-Pro",
+	model="GigaChat-Pro",
 	# model="GigaChat-Plus",
-    model="GigaChat-Max",
+    # model="GigaChat-Max",
 	verify_ssl_certs=False,
-	profanity_check=False
+	profanity_check=False,
+      
+    #request_timeout=60
     )
     api_wrapper = YandexSearchAPIWrapper()
     retriever = YandexSearchAPIRetriever(api_wrapper=api_wrapper, k=30)
@@ -106,7 +121,7 @@ async def chain_with_source():
     prompt = ChatPromptTemplate.from_template(QA_TEMPLATE)
 
     output_parser = StrOutputParser()
-
+    '''
     chain_without_source = (
         RunnableParallel(
             {
@@ -124,7 +139,29 @@ async def chain_with_source():
             "question": itemgetter("question"),
         }
     ).assign(answer=chain_without_source)
-
+    '''
+    chain_without_source = (
+        RunnableParallel(
+            {
+                "context": itemgetter("context") | RunnableLambda(format_docs) | log_step("formatted_context"),
+                "question": itemgetter("question") | log_step("question_passed"),
+            }
+        )
+        | log_step("prompt_building")
+        | prompt
+        | log_step("prompt_rendered")
+        | model
+        | log_step("model_output")
+        | output_parser
+    )
+    chain_with_source = (
+        RunnableParallel(
+            {
+                "context": itemgetter("question") | log_step("retrieving_context") | retriever | log_step("retrieved_docs"),
+                "question": itemgetter("question") | log_step("raw_question"),
+            }
+        ).assign(answer=chain_without_source)
+    )
     return chain_with_source
 
 def get_image(task, image_list):
@@ -154,7 +191,8 @@ def get_image(task, image_list):
 					error_list.append(href)		
 		except Exception as er:
 			logger.error(er)
-                  
+
+                 
 async def mr_report(websocket: WebSocket, task: str, image=False): # 
     # await websocket.send_json({"type": "logs", "output": f"\nMR REPORT  {task}\n\n"})
 
@@ -167,10 +205,13 @@ async def mr_report(websocket: WebSocket, task: str, image=False): #
     image_list = []
     researcher.query = task
     researcher.cfg.max_iterations = 10 #Количество блоков/разделов
+    logger.info(f"Generated researcher")
     chain = await chain_with_source()
+    logger.info(f"Generated chain")
 
     # Формируем разделы/подзаголовки
     agent, role = await choose_agent(researcher.query, researcher.cfg)
+    logger.info(f"Generated agent, role")
     await asyncio.sleep(0.1)
     sub_queries = await get_headings(researcher.query, role, researcher.cfg)
     logger.info(f"Разделы для поиска - {sub_queries}")
@@ -178,7 +219,23 @@ async def mr_report(websocket: WebSocket, task: str, image=False): #
     for question in sub_queries:
         await websocket.send_json({"type": "logs", "output": f"Поиск информации по теме '{question}'"})
         try:
-            response = chain.invoke({"question": question})
+            logger.info(f"[CHAIN] invoke started for question: {question}")
+            # response = await chain.invoke({"question": question})
+            try:
+                logger.info("Invoking chain...")
+                response = await asyncio.wait_for(
+                    asyncio.to_thread(chain.invoke, {"question": question}),
+                    timeout=30
+                )
+            except asyncio.TimeoutError:
+                logger.error("Timeout while waiting for GigaChat response")
+                response = {
+                    "question": question,
+                    "answer": "⚠️ Ответ от модели не получен — превышено время ожидания.",
+                    "context": []
+                }
+            logger.info("[CHAIN] response received")
+
             if image:
                   image, url = get_image(task=question, image_list=image_list)
                   image_list.append(url)
@@ -188,6 +245,7 @@ async def mr_report(websocket: WebSocket, task: str, image=False): #
             # источники
             sources.extend([{response["question"]:[{f"{doc.page_content}": f'{doc.metadata["url"]}'} for doc in response["context"] ]}])
             await websocket.send_json({"type": "report", "output": response["answer"]})
+            logger.info(f"send_json")
         except Exception as er:
              logger.error(er)
         current_step += 1
