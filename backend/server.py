@@ -45,8 +45,14 @@ app.add_middleware(
 
 
 def authenticate_user(username: str, password: str):
-    user = os.getenv('USERNAME')
-    passw = os.getenv('PASSWORD')
+    user = 'DESKTOP-AHIBJG1'
+    passw = 'CTK-IT-Check!#'
+    # user = os.getenv('USERNAME')
+    # passw = os.getenv('PASSWORD')
+    #
+    username = 'DESKTOP-AHIBJG1'
+    password = 'CTK-IT-Check!#'
+    #
     if username == user and password == passw:
         return True
     return False
