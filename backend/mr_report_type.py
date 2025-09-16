@@ -86,7 +86,7 @@ async def chain_with_source():
     model = GigaChat(
 	model="GigaChat-2-Pro",
 	# model="GigaChat-Plus",
-    # model="GigaChat-Max",
+    # model="GigaChat-2-Max",
 	verify_ssl_certs=False,
 	profanity_check=False,
       
@@ -164,33 +164,33 @@ async def chain_with_source():
     )
     return chain_with_source
 
-def get_image(task, image_list):
-	follderid = os.getenv('YANDEX_FOLDER_ID')
-	apikey = os.getenv('YANDEX_API_KEY')
+# def get_image(task, image_list):
+# 	follderid = os.getenv('YANDEX_FOLDER_ID')
+# 	apikey = os.getenv('YANDEX_API_KEY')
 
-	url = f'https://yandex.ru/images-xml?folderid={follderid}&apikey={apikey}&text={task}&itype=jpg&iorient=horizontal&isize=medium&icolor=color'
+# 	url = f'https://yandex.ru/images-xml?folderid={follderid}&apikey={apikey}&text={task}&itype=jpg&iorient=horizontal&isize=medium&icolor=color'
 
-	resp = requests.get(url=url, verify=False)
-	soup = BeautifulSoup(resp.text, 'xml')
-	error_list = []
-	# Извлечение всех элементов <doc> из XML
-	for doc in soup.find_all('doc'):
-		href = doc.find('url').get_text() if doc.find('url') else ''
-		try:
-			sleep(1)
-			# if href and href not in image_list:
-			if href and href not in image_list and href not in error_list:
-				response = requests.get(href, verify=False)
-				if response.status_code == 200:
-					image_stream = BytesIO(response.content)
-					# Кодируем изображение в base64
-					image_data = b64encode(image_stream.getvalue()).decode('utf-8')
-					return image_data, href
-				else:
-					logger.error(f'ERROR- {response.status_code} - {href}')
-					error_list.append(href)		
-		except Exception as er:
-			logger.error(er)
+# 	resp = requests.get(url=url, verify=False)
+# 	soup = BeautifulSoup(resp.text, 'xml')
+# 	error_list = []
+# 	# Извлечение всех элементов <doc> из XML
+# 	for doc in soup.find_all('doc'):
+# 		href = doc.find('url').get_text() if doc.find('url') else ''
+# 		try:
+# 			sleep(1)
+# 			# if href and href not in image_list:
+# 			if href and href not in image_list and href not in error_list:
+# 				response = requests.get(href, verify=False)
+# 				if response.status_code == 200:
+# 					image_stream = BytesIO(response.content)
+# 					# Кодируем изображение в base64
+# 					image_data = b64encode(image_stream.getvalue()).decode('utf-8')
+# 					return image_data, href
+# 				else:
+# 					logger.error(f'ERROR- {response.status_code} - {href}')
+# 					error_list.append(href)		
+# 		except Exception as er:
+# 			logger.error(er)
 
                  
 async def mr_report(websocket: WebSocket, task: str, image=False): # 
