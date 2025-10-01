@@ -18,6 +18,7 @@ const GPTResearcher = (() => {
     const listenToSockEvents = () => {
         const { protocol, host, pathname } = window.location;
         const ws_uri = `${protocol === 'https:' ? 'wss:' : 'ws:'}//${host}${pathname}ws`;
+        // const ws_uri = `${protocol === 'https:' ? 'wss:' : 'ws:'}//${host}/ws`;
         const converter = new showdown.Converter();
         const socket = new WebSocket(ws_uri);
 
@@ -51,6 +52,7 @@ const GPTResearcher = (() => {
 
         socket.onerror = (error) => {
             console.error("WebSocket error observed:", error);
+            alert("Ошибка WebSocket. Попробуйте снова или обратитесь к администратору.");
         };
 
         socket.onclose = (event) => {
