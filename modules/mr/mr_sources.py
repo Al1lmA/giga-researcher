@@ -124,7 +124,7 @@ async def make_sources_file(task, sources):
 
 	prs = add_sources(title="Источники", prs=prs, sources=unique_sources)
 	# Сохранение созданной презентации
-	pptx_path = f"/home/TIsAmbrosyeva/giga_researcher/outputs/mr/sources/Источники-{task}.pptx"
+	pptx_path = f"/home/AnIgDenisova/app_qch_mr/giga_researcher/outputs/mr/sources/Источники-{task}.pptx"
 	prs.save(pptx_path)
-	pdf_path = await convert_pptx_to_pdf(pptx_path, "/home/TIsAmbrosyeva/giga_researcher/outputs/mr/sources")
+	pdf_path = await convert_pptx_to_pdf(pptx_path, "/home/AnIgDenisova/app_qch_mr/giga_researcher/outputs/mr/sources")
 	return pdf_path

@@ -325,7 +325,7 @@ class Company():
         # p.text = 'Текст об источниках'
 
         # Сохранение созданной презентации
-        pptx_path = f"/home/TIsAmbrosyeva/giga_researcher/outputs/{self.org_name}.pptx"
+        pptx_path = f"/home/AnIgDenisova/app_qch_mr/giga_researcher/outputs/{self.org_name}.pptx"
         prs.save(pptx_path)
               
         

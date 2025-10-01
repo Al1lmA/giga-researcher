@@ -256,14 +256,14 @@ async def qcheck_report(websocket: WebSocket, task: str):
 		logger.error(er)
 
 	try:
-		pdf_path = await convert_pptx_to_pdf(pptx_path, "/home/TIsAmbrosyeva/giga_researcher/outputs")
+		pdf_path = await convert_pptx_to_pdf(pptx_path, "/home/AnIgDenisova/app_qch_mr/giga_researcher/outputs")
 	except Exception as er:
 		logger.error(er) 
 	
 	current_step += 1
 	await update_progress(websocket, current_step, total_steps)
 
-	return pptx_path.replace('/home/TIsAmbrosyeva/giga_researcher/', ''), pdf_path.replace('/home/TIsAmbrosyeva/giga_researcher/', '')
+	return pptx_path.replace('/home/AnIgDenisova/app_qch_mr/giga_researcher/', ''), pdf_path.replace('/home/AnIgDenisova/app_qch_mr/giga_researcher/', '')
 
 
 # 1-й вариант, 8 минут сборки
@@ -462,11 +462,11 @@ async def qcheck_report_(websocket: WebSocket, task: str):
 		logger.error(er)
 
 	try:
-		pdf_path = await convert_pptx_to_pdf(pptx_path, "/home/TIsAmbrosyeva/giga_researcher/outputs")
+		pdf_path = await convert_pptx_to_pdf(pptx_path, "/home/AnIgDenisova/app_qch_mr/giga_researcher/outputs")
 	except Exception as er:
 		logger.error(er) 
 	
 	current_step += 1
 	await update_progress(websocket, current_step, total_steps)
 
-	return pptx_path.replace('/home/TIsAmbrosyeva/giga_researcher/', ''), pdf_path.replace('/home/TIsAmbrosyeva/giga_researcher/', '')
+	return pptx_path.replace('/home/AnIgDenisova/app_qch_mr/giga_researcher/', ''), pdf_path.replace('/home/AnIgDenisova/app_qch_mr/giga_researcher/', '')

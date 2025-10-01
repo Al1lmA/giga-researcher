@@ -132,7 +132,7 @@ async def make_mr_pptx(task, qna_list):
     # Сохранение созданной презентации
     BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
     pptx_path = os.path.join(BASE_DIR, "outputs", "mr", f"{task}.pptx")
-    # pptx_path = f"/home/TIsAmbrosyeva/giga_researcher/outputs/mr/{task}.pptx"
+    # pptx_path = f"/home/AnIgDenisova/app_qch_mr/giga_researcher/outputs/mr/{task}.pptx"
     try:
         prs.save(pptx_path)
     except Exception as err:

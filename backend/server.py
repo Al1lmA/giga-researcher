@@ -18,11 +18,11 @@ class ResearchRequest(BaseModel):
 
 app = FastAPI()
 
-app.mount("/site", StaticFiles(directory="/home/TIsAmbrosyeva/giga_researcher/frontend"), name="site")
-app.mount("/static", StaticFiles(directory="/home/TIsAmbrosyeva/giga_researcher/frontend/static"), name="static")
-app.mount("/outputs", StaticFiles(directory="/home/TIsAmbrosyeva/giga_researcher/outputs"), name="outputs")
+app.mount("/site", StaticFiles(directory="/home/AnIgDenisova/app_qch_mr/giga_researcher/frontend"), name="site")
+app.mount("/static", StaticFiles(directory="/home/AnIgDenisova/app_qch_mr/giga_researcher/frontend/static"), name="static")
+app.mount("/outputs", StaticFiles(directory="/home/AnIgDenisova/app_qch_mr/giga_researcher/outputs"), name="outputs")
 
-templates = Jinja2Templates(directory="/home/TIsAmbrosyeva/giga_researcher/frontend")
+templates = Jinja2Templates(directory="/home/AnIgDenisova/app_qch_mr/giga_researcher/frontend")
 
 manager = WebSocketManager()
 

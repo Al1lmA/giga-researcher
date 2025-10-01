@@ -179,7 +179,7 @@ async def make_mr_images_pptx(task, qna_list):
 		for question, answer in qna.items():
 			prs = await add_text(title=question, prs=prs, text=answer[0], image=answer[1], url=answer[2])
 
-	pptx_path = f"/home/TIsAmbrosyeva/giga_researcher/outputs/mr/{task}.pptx"
+	pptx_path = f"/home/AnIgDenisova/app_qch_mr/giga_researcher/outputs/mr/{task}.pptx"
 	prs.save(pptx_path)
 
 	return pptx_path
