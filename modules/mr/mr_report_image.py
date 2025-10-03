@@ -18,6 +18,7 @@ import asyncio
 from datetime import datetime
 import locale
 import base64
+import os
 
 locale.setlocale(locale.LC_ALL, ('ru_RU', 'UTF-8'))
 
@@ -179,7 +180,9 @@ async def make_mr_images_pptx(task, qna_list):
 		for question, answer in qna.items():
 			prs = await add_text(title=question, prs=prs, text=answer[0], image=answer[1], url=answer[2])
 
-	pptx_path = f"/home/TIsAmbrosyeva/giga_researcher/outputs/mr/{task}.pptx"
+	BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+	pptx_path = os.path.join(BASE_DIR, "outputs", "mr", f"{task}.pptx")
+	# pptx_path = f"/home/TIsAmbrosyeva/giga_researcher/outputs/mr/{task}.pptx"
 	prs.save(pptx_path)
 
 	return pptx_path
