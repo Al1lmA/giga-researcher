@@ -225,7 +225,7 @@ async def mr_report(websocket: WebSocket, task: str, image=False): #
                 logger.info("Invoking chain...")
                 response = await asyncio.wait_for(
                     asyncio.to_thread(chain.invoke, {"question": question}),
-                    timeout=90
+                    timeout=180
                 )
             except asyncio.TimeoutError:
                 logger.error("Timeout while waiting for GigaChat response")
