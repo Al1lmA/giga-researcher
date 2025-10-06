@@ -1,5 +1,6 @@
 import asyncio
 import json
+import os
 from typing import List, Dict
 from fastapi import WebSocket
 from loguru import logger
@@ -9,6 +10,9 @@ from modules.company import Company
 from modules.bfo import get_content_from_bfo, get_table_and_graph
 from backend.utils import convert_pptx_to_pdf, write_md_to_pdf
 from backend.mr_report_type import chain_with_source
+
+BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+OUTPUTS_DIR = os.path.join(BASE_DIR, "outputs")
 
 async def update_progress(websocket: WebSocket, current_step: int, total_steps: int):
 	progress_percentage = int(current_step / total_steps * 100)
@@ -256,14 +260,14 @@ async def qcheck_report(websocket: WebSocket, task: str):
 		logger.error(er)
 
 	try:
-		pdf_path = await convert_pptx_to_pdf(pptx_path, "/home/AnIgDenisova/app_qch_mr/giga_researcher/outputs")
+		pdf_path = await convert_pptx_to_pdf(pptx_path, OUTPUTS_DIR)
 	except Exception as er:
 		logger.error(er) 
 	
 	current_step += 1
 	await update_progress(websocket, current_step, total_steps)
 
-	return pptx_path.replace('/home/AnIgDenisova/app_qch_mr/giga_researcher/', ''), pdf_path.replace('/home/AnIgDenisova/app_qch_mr/giga_researcher/', '')
+	return pptx_path.replace(BASE_DIR, ''), pdf_path.replace(BASE_DIR, '')
 
 
 # 1-й вариант, 8 минут сборки
@@ -462,11 +466,11 @@ async def qcheck_report_(websocket: WebSocket, task: str):
 		logger.error(er)
 
 	try:
-		pdf_path = await convert_pptx_to_pdf(pptx_path, "/home/AnIgDenisova/app_qch_mr/giga_researcher/outputs")
+		pdf_path = await convert_pptx_to_pdf(pptx_path, OUTPUTS_DIR)
 	except Exception as er:
 		logger.error(er) 
 	
 	current_step += 1
 	await update_progress(websocket, current_step, total_steps)
 
-	return pptx_path.replace('/home/AnIgDenisova/app_qch_mr/giga_researcher/', ''), pdf_path.replace('/home/AnIgDenisova/app_qch_mr/giga_researcher/', '')
+	return pptx_path.replace(BASE_DIR, ''), pdf_path.replace(BASE_DIR, '')

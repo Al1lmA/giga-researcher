@@ -19,12 +19,15 @@ from modules.mr.mr_report_image import make_mr_images_pptx
 import locale
 import requests
 from io import BytesIO
-from base64 import b64encode
+from base64 import b64encode, b64decode
 from time import sleep
 from bs4 import BeautifulSoup
 import time
 
 from modules.mr.mr_sources import make_sources_file
+
+BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+OUTPUTS_DIR = os.path.join(BASE_DIR, "outputs", "mr")
 
 locale.setlocale(locale.LC_ALL, ('ru_RU', 'UTF-8'))
 
@@ -165,33 +168,90 @@ async def chain_with_source():
     return chain_with_source
 
 def get_image(task, image_list):
-	follderid = os.getenv('YANDEX_FOLDER_ID')
-	apikey = os.getenv('YANDEX_API_KEY')
+    folder_id = os.getenv('YANDEX_FOLDER_ID')
+    api_key = os.getenv('YANDEX_API_KEY')
+    
+    if not folder_id or not api_key:
+        logger.error("YANDEX_FOLDER_ID или YANDEX_API_KEY не заданы в переменных окружения")
+        return None, None
 
-	url = f'https://yandex.ru/images-xml?folderid={follderid}&apikey={apikey}&text={task}&itype=jpg&iorient=horizontal&isize=medium&icolor=color'
+    url = "https://searchapi.api.cloud.yandex.net/v2/image/search"
+    headers = {
+        "Authorization": f"Api-Key {api_key}",
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "folderId": folder_id,
+        "query": {
+             "searchType": "SEARCH_TYPE_COM",
+             "queryText": task,
+        },
+        "imageSpec": {
+            "format": "IMAGE_FORMAT_JPEG",
+            "orientation": "IMAGE_ORIENTATION_HORIZONTAL",
+            "size": "IMAGE_SIZE_MEDIUM",
+            "color": "IMAGE_COLOR_COLOR"
+        }
+    }
+    
+    try:
+        response = requests.post(url, headers=headers, json=payload, timeout=20)
+        response.raise_for_status()
+    except Exception as e:
+        logger.error(f"Yandex API request failed: {e}; response: {getattr(e, 'response', None)}")
+        return None, None
+    
+    try:
+        data = response.json()
+        raw_xml_b64 = data.get("rawData")
+        if not raw_xml_b64:
+            logger.warning("Ответ не содержит rawData")
+            return None, None
+        raw_xml = b64decode(raw_xml_b64).decode("utf-8")
+    except Exception as e:
+        logger.error(f"Ошибка при декодировании XML: {e}")
+        return None, None
 
-	resp = requests.get(url=url, verify=False)
-	soup = BeautifulSoup(resp.text, 'xml')
-	error_list = []
-	# Извлечение всех элементов <doc> из XML
-	for doc in soup.find_all('doc'):
-		href = doc.find('url').get_text() if doc.find('url') else ''
-		try:
-			sleep(1)
-			# if href and href not in image_list:
-			if href and href not in image_list and href not in error_list:
-				response = requests.get(href, verify=False)
-				if response.status_code == 200:
-					image_stream = BytesIO(response.content)
-					# Кодируем изображение в base64
-					image_data = b64encode(image_stream.getvalue()).decode('utf-8')
-					return image_data, href
-				else:
-					logger.error(f'ERROR- {response.status_code} - {href}')
-					error_list.append(href)		
-		except Exception as er:
-			logger.error(er)
+    # парсим XML
+    soup = BeautifulSoup(raw_xml, "xml")
+    docs = soup.find_all("doc")
+    error_list = []
 
+    if not docs:
+        logger.warning("Yandex Search API не вернул результатов для запроса")
+        logger.debug(f"XML: {raw_xml}")
+        return None, None
+
+    for doc in docs:
+        href = doc.find("url").get_text() if doc.find("url") else None
+        if not href or href in image_list or href in error_list:
+            continue
+        try:
+            sleep(1)
+            img_resp = requests.get(
+                href,
+                timeout=10,
+                headers={
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                                "Chrome/117.0.0.0 Safari/537.36",
+                    "Accept": "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
+                    "Referer": "https://yandex.ru/",
+                    "Accept-Language": "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7"
+                }
+            )
+            if img_resp.status_code == 200 and "image" in img_resp.headers.get("Content-Type", ""):
+                image_stream = BytesIO(img_resp.content)
+                image_data = b64encode(image_stream.getvalue()).decode('utf-8')
+                return image_data, href
+            else:
+                logger.error(f"Bad response {img_resp.status_code} - {href}")
+                error_list.append(href)
+        except Exception as er:
+            logger.error(f"Ошибка скачивания {href}: {er}")
+            error_list.append(href)
+
+    return None, None
                  
 async def mr_report(websocket: WebSocket, task: str, image=False): # 
     # await websocket.send_json({"type": "logs", "output": f"\nMR REPORT  {task}\n\n"})
@@ -266,7 +326,7 @@ async def mr_report(websocket: WebSocket, task: str, image=False): #
     await update_progress(websocket, current_step, total_steps)
     
     try:
-        pdf_path = await convert_pptx_to_pdf(pptx_path, "/home/AnIgDenisova/app_qch_mr/giga_researcher/outputs/mr")
+        pdf_path = await convert_pptx_to_pdf(pptx_path, OUTPUTS_DIR)
     except Exception as er:
         logger.error(er) 
     
@@ -278,4 +338,4 @@ async def mr_report(websocket: WebSocket, task: str, image=False): #
     current_step += 1
     await update_progress(websocket, current_step, total_steps)
 
-    return pptx_path.replace('/home/AnIgDenisova/app_qch_mr/giga_researcher/', ''), pdf_path.replace('/home/AnIgDenisova/app_qch_mr/giga_researcher/', ''), sources_path.replace('/home/AnIgDenisova/app_qch_mr/giga_researcher/', '')
+    return pptx_path.replace(BASE_DIR, ''), pdf_path.replace(BASE_DIR, ''), sources_path.replace(BASE_DIR, '')
