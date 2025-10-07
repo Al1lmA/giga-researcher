@@ -1,3 +1,4 @@
+import os
 from loguru import logger
 from pptx import Presentation
 from pptx.dml.color import RGBColor
@@ -10,6 +11,8 @@ import locale
 from backend.utils import convert_pptx_to_pdf
 locale.setlocale(locale.LC_ALL, ('ru_RU', 'UTF-8'))
 
+BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+OUTPUTS_DIR = os.path.join(BASE_DIR, "outputs", "mr", "sources")
 
 # Константы для настройки текстового блока
 TEXT_BOX_LEFT = Inches(1)
@@ -124,7 +127,8 @@ async def make_sources_file(task, sources):
 
 	prs = add_sources(title="Источники", prs=prs, sources=unique_sources)
 	# Сохранение созданной презентации
-	pptx_path = f"/home/TIsAmbrosyeva/giga_researcher/outputs/mr/sources/Источники-{task}.pptx"
+	pptx_path = f"{OUTPUTS_DIR}/Источники-{task}.pptx"
+	# pptx_path = f"/home/AnIgDenisova/app_qch_mr/giga_researcher/outputs/mr/sources/Источники-{task}.pptx"
 	prs.save(pptx_path)
-	pdf_path = await convert_pptx_to_pdf(pptx_path, "/home/TIsAmbrosyeva/giga_researcher/outputs/mr/sources")
+	pdf_path = await convert_pptx_to_pdf(pptx_path, OUTPUTS_DIR)
 	return pdf_path

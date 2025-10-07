@@ -26,6 +26,9 @@ import time
 
 from modules.mr.mr_sources import make_sources_file
 
+BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+OUTPUTS_DIR = os.path.join(BASE_DIR, "outputs", "mr")
+
 locale.setlocale(locale.LC_ALL, ('ru_RU', 'UTF-8'))
 
 
@@ -352,7 +355,7 @@ async def mr_report(websocket: WebSocket, task: str, image=False): #
     await update_progress(websocket, current_step, total_steps)
     
     try:
-        pdf_path = await convert_pptx_to_pdf(pptx_path, r"C:\Users\ITCHECK\Desktop\giga_researcher\outputs\mr")
+        pdf_path = await convert_pptx_to_pdf(pptx_path, OUTPUTS_DIR)
     except Exception as er:
         logger.error(er) 
     
@@ -364,4 +367,4 @@ async def mr_report(websocket: WebSocket, task: str, image=False): #
     current_step += 1
     await update_progress(websocket, current_step, total_steps)
 
-    return pptx_path.replace(r'C:\Users\ITCHECK\Desktop\giga_researcher', ''), pdf_path.replace(r'C:\Users\ITCHECK\Desktop\giga_researcher', ''), sources_path.replace(r'C:\Users\ITCHECK\Desktop\giga_researcher', '')
+    return pptx_path.replace(BASE_DIR, ''), pdf_path.replace(BASE_DIR, ''), sources_path.replace(BASE_DIR, '')

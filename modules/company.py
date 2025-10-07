@@ -1,3 +1,4 @@
+import os
 from io import BytesIO
 import docx
 from docx import Document
@@ -11,6 +12,9 @@ from pptx.enum.text import PP_ALIGN
 import re
 import math
 import numpy
+
+BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+OUTPUTS_DIR = os.path.join(BASE_DIR, "outputs")
 
     # Константы для позиционирования текста на слайде
 TEXT_BOX_LEFT = Inches(0.5)
@@ -325,7 +329,7 @@ class Company():
         # p.text = 'Текст об источниках'
 
         # Сохранение созданной презентации
-        pptx_path = f"/home/TIsAmbrosyeva/giga_researcher/outputs/{self.org_name}.pptx"
+        pptx_path = f"{OUTPUTS_DIR}/{self.org_name}.pptx"
         prs.save(pptx_path)
               
         

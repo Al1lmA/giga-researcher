@@ -8,6 +8,11 @@ from loguru import logger
 from fastapi.middleware.cors import CORSMiddleware
 import os
 
+BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+FRONTEND_DIR = os.path.join(BASE_DIR, "frontend") 
+FRONTEND_STATIC_DIR = os.path.join(BASE_DIR, "frontend", "static")
+OUTPUTS_DIR = os.path.join(BASE_DIR, "outputs")
+
 class LoginRequest(BaseModel):
     username: str
     password: str
@@ -21,11 +26,11 @@ app = FastAPI()
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
-app.mount("/site", StaticFiles(directory=os.path.join(BASE_DIR, "frontend")), name="site")
-app.mount("/static", StaticFiles(directory=os.path.join(BASE_DIR, "frontend", "static")), name="static")
-app.mount("/outputs", StaticFiles(directory=os.path.join(BASE_DIR, "outputs")), name="outputs")
+app.mount("/site", StaticFiles(directory=FRONTEND_DIR), name="site")
+app.mount("/static", StaticFiles(directory=FRONTEND_STATIC_DIR), name="static")
+app.mount("/outputs", StaticFiles(directory=OUTPUTS_DIR), name="outputs")
 
-templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "frontend"))
+templates = Jinja2Templates(directory=FRONTEND_DIR)
 
 manager = WebSocketManager()
 

@@ -1,3 +1,4 @@
+import os
 from loguru import logger
 from pptx import Presentation
 from pptx.dml.color import RGBColor
