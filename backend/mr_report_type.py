@@ -87,9 +87,9 @@ def log_step(step_name: str):
 
 async def chain_with_source():
     model = GigaChat(
-model="GigaChat-2-Pro",
+	# model="GigaChat-2-Pro",
 	# model="GigaChat-Plus",
-    # model="GigaChat-2-Max",
+    model="GigaChat-2-Max",
 	verify_ssl_certs=False,
 	profanity_check=False,
       
@@ -280,7 +280,6 @@ def get_image(task, image_list):
             error_list.append(href)
 
     return None, None
-
                  
 async def mr_report(websocket: WebSocket, task: str, image=False): # 
     # await websocket.send_json({"type": "logs", "output": f"\nMR REPORT  {task}\n\n"})
@@ -314,7 +313,7 @@ async def mr_report(websocket: WebSocket, task: str, image=False): #
                 logger.info("Invoking chain...")
                 response = await asyncio.wait_for(
                     asyncio.to_thread(chain.invoke, {"question": question}),
-                    timeout=120
+                    timeout=180
                 )
             except asyncio.TimeoutError:
                 logger.error("Timeout while waiting for GigaChat response")

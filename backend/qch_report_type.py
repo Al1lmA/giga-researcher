@@ -1,6 +1,7 @@
 import os
 import asyncio
 import json
+import os
 from typing import List, Dict
 from fastapi import WebSocket
 from loguru import logger
@@ -39,29 +40,39 @@ async def qcheck_report(websocket: WebSocket, task: str):
 	
 	current_step += 1
 	await update_progress(websocket, current_step, total_steps)
-	logger.info('В qch_report get_egrul - after update_progress')
+	logger.info('В get_egrul - после update_progress')
 	try:
 		comp = await make_card(comp)
-		logger.info('В qch_report get_egrul - after make_card')
+		logger.info('В get_egrul - после make_card')
 		# current_step += 1
 		# await update_progress(websocket, current_step, total_steps)
 		await websocket.send_json({"type": "logs", "output": f"\nПолучены данные из ЕГРЮЛ\n\n"})
 	except Exception as er:
+		logger.exception(f"Ошибка в get_egrul (make_card). Компания: {getattr(comp, 'inn', 'неизвестно')}")
 		logger.error(er)
 		# await websocket.send_json({"type": "logs", "output": f"\nОшибка при получении данных из ЕГРЮЛ\n\n"})
-	await websocket.send_json({"type": "logs", "output": f"Компания - {comp.org_name}"})
+	
+	try:
+		logger.info(f"Компания после get_egrul: {getattr(comp, 'org_name', 'неизвестно')}")
+		await websocket.send_json({"type": "logs", "output": f"Компания - {comp.org_name}"})
+	except Exception as er:
+		logger.exception("Ошибка при отправке информации о компании")
+
+
 	await asyncio.sleep(0.5)
 	current_step += 1
 	await update_progress(websocket, current_step, total_steps)
 
 	#  Сбор данных из БФО
 	try:
+		logger.info(f"Сбор данных из БФО: {getattr(comp, 'inn', 'неизвестно')}")
 		comp = await get_content_from_bfo(comp)
 		comp = await get_table_and_graph(comp)
 		# current_step += 1
 		# await update_progress(websocket, current_step, total_steps)
 		await websocket.send_json({"type": "logs", "output": f"\nПолучены данные из БФО\n\n"})
 	except Exception as er:
+		logger.exception("Ошибка при получении данных из БФО")
 		logger.error(er)
 	current_step += 1
 	await update_progress(websocket, current_step, total_steps)
