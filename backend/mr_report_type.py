@@ -87,13 +87,12 @@ def log_step(step_name: str):
 
 async def chain_with_source():
     model = GigaChat(
-	# model="GigaChat-2-Pro",
+	model="GigaChat-2-Pro",
 	# model="GigaChat-Plus",
-    model="GigaChat-2-Max",
+    # model="GigaChat-2-Max",
 	verify_ssl_certs=False,
-	profanity_check=False,
-      
-    #request_timeout=60
+	profanity_check=False,      
+    request_timeout=60
     )
     api_wrapper = YandexSearchAPIWrapper()
     retriever = YandexSearchAPIRetriever(api_wrapper=api_wrapper, k=30)
@@ -322,6 +321,10 @@ async def mr_report(websocket: WebSocket, task: str, image=False): #
                     "answer": "⚠️ Ответ от модели не получен — превышено время ожидания.",
                     "context": []
                 }
+            except Exception as e:
+                logger.error(f"GigaChat chain invoke error for {question}: {repr(e)}")
+                response = {"question": question, "answer": f"⚠️ Ошибка: {repr(e)}", "context": []}
+                
             logger.info("[CHAIN] response received")
 
             if image:
@@ -331,6 +334,9 @@ async def mr_report(websocket: WebSocket, task: str, image=False): #
             else:
                 context.append({response["question"]:response["answer"]})
             # источники
+
+            logger.info(f"DEBUG response['context'] = {response.get('context')}")
+
             sources.extend([{response["question"]:[{f"{doc.page_content}": f'{doc.metadata["url"]}'} for doc in response["context"] ]}])
             await websocket.send_json({"type": "report", "output": response["answer"]})
             logger.info(f"send_json")

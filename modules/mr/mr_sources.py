@@ -114,6 +114,9 @@ def remove_non_unique_values_from_nested_dicts(input_list):
 
 
 async def make_sources_file(task, sources):
+
+	logger.info(f"DEBUG sources = {sources}")
+
 	template_path = 'modules/mr/Market_Research_2.pptx'
 	# Создание нового документа на основе шаблона
 	prs = Presentation(template_path)
