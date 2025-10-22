@@ -84,7 +84,7 @@ def log_step(step_name: str):
 
 async def chain_with_source():
     model = GigaChat(
-	model="GigaChat-Pro",
+	model="GigaChat-2-Pro",
 	# model="GigaChat-Plus",
     # model="GigaChat-Max",
 	verify_ssl_certs=False,
