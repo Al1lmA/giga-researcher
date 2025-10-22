@@ -92,7 +92,7 @@ async def chain_with_source():
     # model="GigaChat-2-Max",
 	verify_ssl_certs=False,
 	profanity_check=False,      
-    request_timeout=60
+    # request_timeout=60
     )
     api_wrapper = YandexSearchAPIWrapper()
     retriever = YandexSearchAPIRetriever(api_wrapper=api_wrapper, k=30)

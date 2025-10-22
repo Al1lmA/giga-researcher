@@ -7,4 +7,5 @@ test.txt
 test.pptx
 card.py
 venv
+!/venv/Lib/site-packages/langchain_community/utilities/yandex_search.py
 temp_image.jpg
