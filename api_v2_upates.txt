@@ -1,0 +1,59 @@
+🔑 Основные отличия
+
+Базовый URL
+
+Было: https://yandex.ru/search/xml (XML API).
+
+Стало: https://searchapi.api.cloud.yandex.net/v2/web/search (Cloud API).
+
+Аутентификация
+
+Было: передавались apikey и folderid как query-параметры.
+
+Стало: используется HTTP-заголовок Authorization: Api-Key <ключ> + JSON-поле folderId.
+
+Структура запроса
+
+Было: query как параметр строки запроса (?query=...).
+
+Стало: JSON-payload:
+
+{
+  "folderId": "xxx",
+  "query": {
+    "searchType": "SEARCH_TYPE_RU",
+    "queryText": "Сергей Есенин"
+  },
+  "pageSize": 10,
+  "page": 0,
+  "lang": "ru"
+}
+
+
+Структура ответа
+
+Было: XML → парсинг через parsel.Selector.
+
+Стало: JSON → просто response.json().
+
+Парсинг результатов
+
+Было: доставали <doc>, <title>, <headline>, <passages> и вручную чистили HTML-теги.
+
+Стало: API v2 возвращает JSON (title, url, snippet), поэтому достаточно пройтись по results.
+
+Ошибки
+
+Было: ошибка <error> в XML.
+
+Стало: проверка response.raise_for_status(), а тело ошибки возвращается в JSON.
+
+Асинхронность
+
+Оставил httpx.AsyncClient для async-варианта, синхронный — через httpx.Client.
+
+Упрощение параметров
+
+Убрал ненужные параметры XML API (groupby, sortby, filter, docs-in-group и т. д.).
+
+В v2 остались только pageSize, page, lang.

@@ -9,12 +9,12 @@ async def convert_pptx_to_pdf(input_file, output_dir):
     """ Конвертация PPTX в PDF программой LibreOffice """
 
     try:
-        if not os.path.exists("/usr/bin/libreoffice"):
+        if not os.path.exists(r"C:\Users\ITCHECK\Programs\LibreOffice\program\soffice.exe"):
             raise Exception("Установите LibreOffice")
 
         os.makedirs(output_dir, exist_ok=True)
         output_file = os.path.join(output_dir, os.path.splitext(os.path.basename(input_file))[0] + ".pdf")
-        subprocess.run(["/usr/bin/libreoffice", "--headless", "--convert-to", "pdf", input_file, "--outdir", output_dir], check=True)
+        subprocess.run([r"C:\Users\ITCHECK\Programs\LibreOffice\program\soffice.exe", "--headless", "--convert-to", "pdf", input_file, "--outdir", output_dir], check=True)
         
         print(f"PPTX конверитирован в PDF: {output_file}")
     except Exception as e:

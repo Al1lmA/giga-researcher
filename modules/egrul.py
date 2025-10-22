@@ -24,7 +24,9 @@ async def get_egrul(cls = Company):
             "Accept-Language": "ru-RU,ru;q=0.8,en-US;q=0.5,en;q=0.3",
             "Referer": "https://egrul.nalog.ru/index.html"}
 
+    logger.info("Отправляем GET-запрос на egrul.nalog.ru")
     r = s.get("https://egrul.nalog.ru/index.html", headers=headers)
+    logger.info(f"Ответ GET-запроса: {r.status_code}")
 
     data = f'vyp3CaptchaToken=&page=&query={cls.inn}&region=&PreventChromeAutocomplete='
     req = requests.Request(
@@ -43,14 +45,28 @@ async def get_egrul(cls = Company):
         }
         )
     r = s.prepare_request(req)
+    logger.info("Отправляем POST-запрос...")
     r = s.send(r)
-    t = json.loads(r.text)['t']
+    logger.info(f"Ответ POST-запроса: {r.status_code}, текст: {r.text[:200]}...")
+
+    try:
+        t = json.loads(r.text)['t']
+        logger.info(f"Получен токен t: {t}")
+    except Exception as e:
+        logger.error("Ошибка при парсинге токена t из ответа POST-запроса", exc_info=True)
+        return
 
     # await asyncio.sleep(0.5)
 
-    r = s.get("https://egrul.nalog.ru/search-result/"+str(t), headers=headers)
+    logger.info("Отправляем запрос на получение search-result")
+    r = s.get(f"https://egrul.nalog.ru/search-result/{t}", headers=headers)
+    logger.info(f"Ответ search-result: {r.status_code}, текст: {r.text[:200]}...")
 
-    jsn = json.loads(r.text)
+    try:
+        jsn = json.loads(r.text)
+    except Exception:
+        logger.exception("Ошибка при разборе JSON из search-result")
+        return
 
     try:
         if jsn['status'] == 'wait':
@@ -58,7 +74,6 @@ async def get_egrul(cls = Company):
     except Exception:
         pass
     logger.info('Ответ из ЕГРЮЛ')
-    logger.info(jsn.keys())
     if 'rows' in jsn:
         pass
     else:

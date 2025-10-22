@@ -1,5 +1,7 @@
+import os
 import asyncio
 import json
+import os
 from typing import List, Dict
 from fastapi import WebSocket
 from loguru import logger
@@ -9,6 +11,9 @@ from modules.company import Company
 from modules.bfo import get_content_from_bfo, get_table_and_graph
 from backend.utils import convert_pptx_to_pdf, write_md_to_pdf
 from backend.mr_report_type import chain_with_source
+
+BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+OUTPUTS_DIR = os.path.join(BASE_DIR, "outputs")
 
 async def update_progress(websocket: WebSocket, current_step: int, total_steps: int):
 	progress_percentage = int(current_step / total_steps * 100)
@@ -35,29 +40,39 @@ async def qcheck_report(websocket: WebSocket, task: str):
 	
 	current_step += 1
 	await update_progress(websocket, current_step, total_steps)
-	logger.info('В qch_report get_egrul - after update_progress')
+	logger.info('В get_egrul - после update_progress')
 	try:
 		comp = await make_card(comp)
-		logger.info('В qch_report get_egrul - after make_card')
+		logger.info('В get_egrul - после make_card')
 		# current_step += 1
 		# await update_progress(websocket, current_step, total_steps)
 		await websocket.send_json({"type": "logs", "output": f"\nПолучены данные из ЕГРЮЛ\n\n"})
 	except Exception as er:
+		logger.exception(f"Ошибка в get_egrul (make_card). Компания: {getattr(comp, 'inn', 'неизвестно')}")
 		logger.error(er)
 		# await websocket.send_json({"type": "logs", "output": f"\nОшибка при получении данных из ЕГРЮЛ\n\n"})
-	await websocket.send_json({"type": "logs", "output": f"Компания - {comp.org_name}"})
+	
+	try:
+		logger.info(f"Компания после get_egrul: {getattr(comp, 'org_name', 'неизвестно')}")
+		await websocket.send_json({"type": "logs", "output": f"Компания - {comp.org_name}"})
+	except Exception as er:
+		logger.exception("Ошибка при отправке информации о компании")
+
+
 	await asyncio.sleep(0.5)
 	current_step += 1
 	await update_progress(websocket, current_step, total_steps)
 
 	#  Сбор данных из БФО
 	try:
+		logger.info(f"Сбор данных из БФО: {getattr(comp, 'inn', 'неизвестно')}")
 		comp = await get_content_from_bfo(comp)
 		comp = await get_table_and_graph(comp)
 		# current_step += 1
 		# await update_progress(websocket, current_step, total_steps)
 		await websocket.send_json({"type": "logs", "output": f"\nПолучены данные из БФО\n\n"})
 	except Exception as er:
+		logger.exception("Ошибка при получении данных из БФО")
 		logger.error(er)
 	current_step += 1
 	await update_progress(websocket, current_step, total_steps)
@@ -246,14 +261,14 @@ async def qcheck_report(websocket: WebSocket, task: str):
 		logger.error(er)
 
 	try:
-		pdf_path = await convert_pptx_to_pdf(pptx_path, "/home/TIsAmbrosyeva/giga_researcher/outputs")
+		pdf_path = await convert_pptx_to_pdf(pptx_path, OUTPUTS_DIR)
 	except Exception as er:
 		logger.error(er) 
 	
 	current_step += 1
 	await update_progress(websocket, current_step, total_steps)
 
-	return pptx_path.replace('/home/TIsAmbrosyeva/giga_researcher/', ''), pdf_path.replace('/home/TIsAmbrosyeva/giga_researcher/', '')
+	return pptx_path.replace(BASE_DIR, ''), pdf_path.replace(BASE_DIR, '')
 
 
 # 1-й вариант, 8 минут сборки
@@ -452,11 +467,11 @@ async def qcheck_report_(websocket: WebSocket, task: str):
 		logger.error(er)
 
 	try:
-		pdf_path = await convert_pptx_to_pdf(pptx_path, "/home/TIsAmbrosyeva/giga_researcher/outputs")
+		pdf_path = await convert_pptx_to_pdf(pptx_path, OUTPUTS_DIR)
 	except Exception as er:
 		logger.error(er) 
 	
 	current_step += 1
 	await update_progress(websocket, current_step, total_steps)
 
-	return pptx_path.replace('/home/TIsAmbrosyeva/giga_researcher/', ''), pdf_path.replace('/home/TIsAmbrosyeva/giga_researcher/', '')
+	return pptx_path.replace(BASE_DIR, ''), pdf_path.replace(BASE_DIR, '')
