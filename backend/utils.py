@@ -3,18 +3,22 @@ import urllib
 import uuid
 from md2pdf.core import md2pdf
 import os
+from dotenv import load_dotenv
 import subprocess
+
+load_dotenv()
+LIBREOFFICE_PATH = os.getenv("LIBREOFFICE_PATH")
 
 async def convert_pptx_to_pdf(input_file, output_dir):
     """ Конвертация PPTX в PDF программой LibreOffice """
 
     try:
-        if not os.path.exists(r"C:\Program Files\LibreOffice\program\soffice.exe"):
+        if not LIBREOFFICE_PATH or not os.path.exists(LIBREOFFICE_PATH):
             raise Exception("Установите LibreOffice")
 
         os.makedirs(output_dir, exist_ok=True)
         output_file = os.path.join(output_dir, os.path.splitext(os.path.basename(input_file))[0] + ".pdf")
-        subprocess.run([r"C:\Program Files\LibreOffice\program\soffice.exe", "--headless", "--convert-to", "pdf", input_file, "--outdir", output_dir], check=True)
+        subprocess.run([LIBREOFFICE_PATH, "--headless", "--convert-to", "pdf", input_file, "--outdir", output_dir], check=True)
         
         print(f"PPTX конверитирован в PDF: {output_file}")
     except Exception as e:

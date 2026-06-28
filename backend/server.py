@@ -7,6 +7,9 @@ from backend.websocket_manager import WebSocketManager
 from loguru import logger
 from fastapi.middleware.cors import CORSMiddleware
 import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 FRONTEND_DIR = os.path.join(BASE_DIR, "frontend") 
@@ -51,9 +54,9 @@ def authenticate_user(username: str, password: str):
     passw = os.getenv('PASSWORD')
 
     # logger.info('!!!!!!!!!!!!!!!')
-    # logger.info(user)
+    logger.info(user)
     # logger.info('!!!!!!!!!!!!!!!')
-    # logger.info(passw)
+    logger.info(passw)
     
     ##костыль
     username = 'zhdan'
