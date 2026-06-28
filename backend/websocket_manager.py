@@ -24,7 +24,14 @@ class TaskManager:
         match report_type:
             case "qcheck_report":
                 if task.strip().isdigit() and len(task) < 11:
-                    pptx_path, pdf_path = await qcheck_report(websocket=publisher, task=task.strip())
+                    result = await qcheck_report(websocket=publisher, task=task.strip())
+                    if not result:
+                        await publisher.send_error("Quick-Check-Up завершился без результирующих файлов.")
+                        return
+                    pptx_path, pdf_path = result
+                    if not pptx_path:
+                        await publisher.send_error("Quick-Check-Up не смог сформировать итоговые файлы.")
+                        return
                     await publisher.send_path(output=pptx_path, pdf_output=pdf_path)
                 else:
                     await publisher.send_error("Введите корректный ИНН")

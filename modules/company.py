@@ -12,6 +12,7 @@ from pptx.enum.text import PP_ALIGN
 import re
 import math
 import numpy
+import re
 
 BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 OUTPUTS_DIR = os.path.join(BASE_DIR, "outputs")
@@ -23,6 +24,20 @@ TEXT_BOX_WIDTH = Inches(6.7)
 TEXT_BOX_HEIGHT = Inches(2)
 TEXT_FONT_SIZE = Pt(14)
 TEXT_FONT_NAME = "SB Sans Display"
+
+def safe_filename(name: str, fallback: str = "report") -> str:  ##исправление бага имени на винде, на сервер подгружать НЕ НАДО 
+        """
+        Делает строку безопасной для имени файла на Windows/Linux.
+        Убирает символы, запрещённые в Windows: < > : " / \ | ? *
+        """
+        if not name:
+            return fallback
+
+        name = re.sub(r'[<>:"/\\|?*]', '', name)
+        name = re.sub(r'\s+', ' ', name).strip()
+        name = name.rstrip(". ")
+
+        return name[:150] or fallback
 
 class Company():
     """This is a class for the company"""
@@ -329,7 +344,9 @@ class Company():
         # p.text = 'Текст об источниках'
 
         # Сохранение созданной презентации
-        pptx_path = f"{OUTPUTS_DIR}/{self.org_name}.pptx"
+        file_name = safe_filename(self.org_name)  #БЕЗОПАСНОЕ ИМЯ БЕЗ КАВЫЧЕК ДЛЯ ГЕНЕРАЦИИ ОТЧЕТА НА ВИНДЕ 
+
+        pptx_path = f"{OUTPUTS_DIR}/{file_name}.pptx"
         prs.save(pptx_path)
               
         

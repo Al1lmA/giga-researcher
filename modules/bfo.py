@@ -18,10 +18,31 @@ from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
 from bs4 import BeautifulSoup
 from modules.company import *
+import urllib3
+from urllib3.exceptions import InsecureRequestWarning
+import plotly
+import plotly.io as pio
+from pathlib import Path
 
 
-from requests.packages.urllib3.exceptions import InsecureRequestWarning
-requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
+# from requests.packages.urllib3.exceptions import InsecureRequestWarning
+# requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
+
+urllib3.disable_warnings(InsecureRequestWarning)
+
+def configure_kaleido_plotlyjs():
+    """
+    Явно указывает Kaleido путь к plotly.min.js.
+    Нужно для локальной Windows-среды, где Kaleido иногда получает пустой plotlyjs path.
+    """
+    plotly_js_path = os.path.join(
+        os.path.dirname(plotly.__file__),
+        "package_data",
+        "plotly.min.js"
+    )
+
+    if os.path.exists(plotly_js_path):
+        pio.kaleido.scope.plotlyjs = plotly_js_path
 
 async def get_content_from_bfo(cls=Company):
 	"""
@@ -38,7 +59,14 @@ async def get_content_from_bfo(cls=Company):
 	options = webdriver.ChromeOptions()
 	options.add_argument('--headless') 
 	options.add_argument('--no-sandbox')
-	bfo_driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
+	driver_path = Path(ChromeDriverManager().install())
+	if 'THIRD_PARTY' in driver_path.name:
+		driver_path = driver_path.parent.parent / 'chromedriver'
+
+	# Создание сервиса и драйвера
+	service = Service(driver_path)
+	bfo_driver = webdriver.Chrome(service=service, options=options)
+	# bfo_driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
 	url = f"https://bo.nalog.ru/search?query={inn}&page=1"
 	bfo_driver.get(url)
 	url = bfo_driver.find_element(By.CSS_SELECTOR, "a.results-search-table-row").get_attribute("href")
@@ -184,6 +212,7 @@ async def get_table_and_graph(cls= Company):
 		except Exception as er:
 			logger.error(er)
 		# Записываем график в переменную в виде байтов для использования в отчете
+		configure_kaleido_plotlyjs()
 		graph = fig.to_image(format='png')
 		cls.table = table
 		cls.graph = graph

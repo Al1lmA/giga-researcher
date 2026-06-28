@@ -4,13 +4,19 @@ import pdfplumber
 import pandas as pd
 import os
 import asyncio
+import polars as pl
+import gc
 from modules.company import *
 from loguru import logger
 from modules.google import *
+import urllib3
+from urllib3.exceptions import InsecureRequestWarning
 
-from requests.packages.urllib3.exceptions import InsecureRequestWarning
-requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
 
+# from requests.packages.urllib3.exceptions import InsecureRequestWarning
+# requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
+
+urllib3.disable_warnings(InsecureRequestWarning)
 
 async def get_egrul(cls = Company):
     """
@@ -103,7 +109,7 @@ async def get_egrul(cls = Company):
         logger.exception(e)
     return cls
 
-
+'''
 async def make_card(cls = Company):
     """
     Создание карточки компании из выписки ЕГРЮЛ. Карточка будет дополняться в следующих функциях.
@@ -163,4 +169,105 @@ async def make_card(cls = Company):
     # .replace('ООО', '').replace('ЗАО', '').replace('ОАО', '').replace('АО', '').replace('ПАО', '')
     logger.info("Юридическое лицо - " + cls.org_name)
     return cls
+'''
 
+# 08.10.2025 - оптмизируем make_card
+
+async def make_card(cls=Company):
+    """
+    Создание карточки компании из выписки ЕГРЮЛ. 
+    Карточка будет дополняться в следующих функциях.
+    Обрабатывает PDF постранично, не держит весь файл в памяти.
+    """
+
+    needed_keys = {
+        "Адрес юридического лица": "Штаб-квартира",
+        "Размер (в рублях)": "Объём финансирования",
+        "Код и наименование вида деятельности": "Основной вид деятельности",
+        "Полное наименование на русском языке": "Юридическое лицо",
+        "Дата регистрации до 1 июля 2002 года": "Дата регистрации компании",
+        "Дата регистрации": "Дата регистрации компании"
+    }
+
+    results = {v: None for v in needed_keys.values()}
+    ceo_value = None 
+
+    try:
+        logger.info(f"Создаем карточку компании")
+        with pdfplumber.open(cls.filename) as pdf:
+            logger.info(f"PDF состоит из {len(pdf.pages)} страниц")
+
+            for page in pdf.pages:
+                table = page.extract_table()
+                if not table:
+                    continue
+
+                df = pl.DataFrame(table, schema=["a", "b", "c"])
+
+                if ceo_value is None:
+                    ceo_rows = df.filter(pl.col("b") == "Фамилия\nИмя\nОтчество")
+                    if ceo_rows.height > 0:
+                        ceo_value = ceo_rows["c"][0].replace("\n", " ").strip()
+                    else:
+                        ceo_rows = df.filter(pl.col("b") == "Фамилия\nИмя")
+                        if ceo_rows.height > 0:
+                            ceo_value = ceo_rows["c"][0].replace("\n", " ").strip()
+
+                matches = df.filter(pl.col("b").is_in(list(needed_keys.keys())))
+
+                for row in matches.iter_rows(named=True):
+                    key = row["b"]
+                    val = (row["c"] or "").replace("\n", " ").strip()
+                    mapped_key = needed_keys[key]
+                    if not results[mapped_key]:
+                        results[mapped_key] = val
+
+                del df, matches, table, page
+                gc.collect()
+
+                # если нашли всё, можно выйти
+                if all(results.values()) and ceo_value:
+                    logger.info(f"Все данные найдены, прекращаем чтение PDF.")
+                    break
+
+            logger.info(f"Извлечено полей: {sum(1 for v in results.values() if v)} из {len(results)}")
+
+        # Добавляем CEO в результаты
+        results["CEO компании"] = ceo_value or "Не указано"
+
+        # постобработка — сумма финансирования
+        if results["Объём финансирования"]:
+            try:
+                results["Объём финансирования"] = str(sum(
+                    float(x.replace(" ", "").replace(",", ".")) 
+                    for x in results["Объём финансирования"].split()
+                    if x.replace(",", ".").replace(".", "", 1).isdigit()
+                ))
+            except Exception:
+                pass
+
+        cls.card = results
+
+        # Название компании
+        org_name = results.get("Юридическое лицо", "")
+        if not org_name:
+            logger.warning("Юридическое лицо не найдено, пробуем взять из первых строк PDF")
+
+            # fallback — прочитаем первые 5 строк первой страницы
+            with pdfplumber.open(cls.filename) as pdf:
+                first_page = pdf.pages[0]
+                table = first_page.extract_table()
+                if table and len(table) > 6:
+                    org_name = table[6][2].replace("\n", "").replace('"', "")
+                del table, first_page
+                gc.collect()
+        
+        cls.org_name = org_name
+        logger.info(f"Юридическое лицо - {cls.org_name}")
+
+        return cls
+
+    except Exception as er:
+        logger.exception(f"Ошибка в make_card: {er}")
+        gc.collect()
+        return cls

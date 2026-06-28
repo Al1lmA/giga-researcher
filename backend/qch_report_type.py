@@ -3,7 +3,7 @@ import asyncio
 import json
 import os
 from typing import List, Dict
-from fastapi import WebSocket
+from fastapi import WebSocket, WebSocketDisconnect
 from loguru import logger
 from gpt_researcher.master.agent import GPTResearcher
 from modules.egrul import get_egrul, make_card
@@ -11,6 +11,8 @@ from modules.company import Company
 from modules.bfo import get_content_from_bfo, get_table_and_graph
 from backend.utils import convert_pptx_to_pdf, write_md_to_pdf
 from backend.mr_report_type import chain_with_source
+
+from concurrent.futures import ProcessPoolExecutor, TimeoutError as FuturesTimeoutError
 
 BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 OUTPUTS_DIR = os.path.join(BASE_DIR, "outputs")
@@ -20,6 +22,7 @@ async def update_progress(websocket: WebSocket, current_step: int, total_steps: 
 	await websocket.send_json({"type": "progress", "output": progress_percentage})
 
 # 2 минуты сборки
+"""
 async def qcheck_report(websocket: WebSocket, task: str):
 	# await websocket.send_json({"type": "logs", "output": f"\nQCHECK REPORT  {task}\n\n"})
 	comp = Company(inn=task)
@@ -269,7 +272,192 @@ async def qcheck_report(websocket: WebSocket, task: str):
 	await update_progress(websocket, current_step, total_steps)
 
 	return pptx_path.replace(BASE_DIR, ''), pdf_path.replace(BASE_DIR, '')
+"""
 
+# от 05.11.2025
+async def safe_send(websocket: WebSocket, data: dict):
+    """Безопасная отправка через FastAPI WebSocket."""
+    try:
+        await websocket.send_json(data)
+    except WebSocketDisconnect:
+        # Клиент закрыл соединение — просто выходим
+        raise
+    except Exception as e:
+        # Логируем другие ошибки
+        print(f"Ошибка при отправке через WebSocket: {e}")
+
+async def safe_chain_invoke(chain, query: str, timeout: int = 300):
+    """Безопасный вызов chain.invoke в отдельном потоке с таймаутом."""
+    try:
+        logger.info(f"Выполняем запрос к chain: {query[:60]}...")
+        response = await asyncio.wait_for(
+            asyncio.to_thread(chain.invoke, {"question": query}),
+            timeout=timeout,
+        )
+        return response
+    except asyncio.TimeoutError:
+        logger.error(f"Таймаут при chain.invoke: {query}")
+        return {"answer": "Ошибка: превышено время ожидания ответа."}
+    except Exception as e:
+        logger.exception(f"Ошибка при chain.invoke: {e}")
+        return {"answer": "Ошибка при обращении к языковой модели."}
+
+async def qcheck_report(websocket: WebSocket, task: str):
+    comp = Company(inn=task)
+    total_steps = 16
+    current_step = 0
+
+    # =====================
+    #  ЕГРЮЛ
+    # =====================
+    try:
+        comp = await get_egrul(comp)
+        await safe_send(websocket, {"type": "logs", "output": f"\nПолучены данные из ЕГРЮЛ\n"})
+    except Exception as er:
+        logger.error(er)
+        await safe_send(websocket, {"type": "logs", "output": f"\nОшибка при получении данных из ЕГРЮЛ\nПроверьте ИНН"})
+        return None, None
+
+    current_step += 1
+    await update_progress(websocket, current_step, total_steps)
+
+    try:
+        comp = await make_card(comp)
+        await safe_send(websocket, {"type": "logs", "output": f"Компания - {comp.org_name}"})
+    except Exception as er:
+        logger.exception("Ошибка в make_card")
+
+    await asyncio.sleep(0.5)
+    current_step += 1
+    await update_progress(websocket, current_step, total_steps)
+
+    # =====================
+    #  БФО
+    # =====================
+    try:
+        comp = await get_content_from_bfo(comp)
+        comp = await get_table_and_graph(comp)
+        await safe_send(websocket, {"type": "logs", "output": f"\nПолучены данные из БФО\n"})
+    except Exception as er:
+        logger.exception("Ошибка при получении данных из БФО")
+
+    current_step += 1
+    await update_progress(websocket, current_step, total_steps)
+
+    # =====================
+    #  GPT / Gigachat
+    # =====================
+    researcher = GPTResearcher(config_path=None, websocket=websocket)
+    chain = await chain_with_source()
+
+    # ---------- О компании ----------
+    query = f'Основная информация о компании {comp.org_name}, {comp.inn}'
+    response = await safe_chain_invoke(chain, query)
+    comp.text_o_kompanii = response["answer"]
+    current_step += 1
+    await update_progress(websocket, current_step, total_steps)
+
+    # ---------- Добавление карточки ----------
+    try:
+        if task == '7707083893':
+            comp.card.update({
+                'Год основания': '1841 г.',
+                'Телефон': '8(800)555-55-50',
+                'Email': 'sberbank@sberbank.ru',
+                'Количество сотрудников': '281 000',
+                'Ключевые технологии': 'n/a',
+                'Сферы применения': 'Банковская сфера',
+                'Официальный сайт': 'www.sberbank.ru'
+            })
+        elif task == '7707049388':
+            comp.card.update({
+                'Год основания': '1993 г.',
+                'Телефон': '+7(499)999-82-83',
+                'Email': 'rostelecom@rt.ru',
+                'Количество сотрудников': '119 400',
+                'Ключевые технологии': 'n/a',
+                'Сферы применения': 'Телекоммуникации и IT',
+                'Официальный сайт': 'www.company.rt.ru'
+            })
+        else:
+            comp.card.update(await researcher.add_card_value_(comp.org_name))
+    except Exception as er:
+        logger.error(er)
+    current_step += 1
+    await update_progress(websocket, current_step, total_steps)
+
+    # =====================
+    #  Цикл анализа через chain
+    # =====================
+    analysis_blocks = [
+        ("Анализ владельцев", "holders"),
+        ("Бизнес-модель", "bm"),
+        ("Инвестиции", "invest"),
+        ("Ключевые клиенты", "customers"),
+        ("Продукты", "products"),
+        ("ИТ-Инфраструктура", "infra"),
+        ("Оценка рынка и конкурентов", "competitors"),
+        ("Оценка команды", "team")
+    ]
+
+    for block_name, attr in analysis_blocks:
+        try:
+            market = comp.card.get('Сферы применения', '')
+            query = f"{block_name} компании {comp.org_name}"
+            if "рынка" in block_name:
+                query = f"Оценка рынка {market} и конкурентов компании {comp.org_name}"
+
+            await safe_send(websocket, {"type": "logs", "output": f"{query}"})
+            response = await safe_chain_invoke(chain, query)
+            setattr(comp, attr, response['answer'])
+            await safe_send(websocket, {"type": "report", "output": response['answer']})
+        except WebSocketDisconnect:
+            logger.warning("Клиент отключился — прекращаем анализ.")
+            return None, None
+        except Exception as er:
+            logger.error(er)
+
+        current_step += 1
+        await update_progress(websocket, current_step, total_steps)
+        await asyncio.sleep(0.5)
+        # Heartbeat каждые шаги
+        await safe_send(websocket, {"type": "ping", "output": "heartbeat"})
+
+    # =====================
+    #  Заключение, summary, презентация
+    # =====================
+    text = comp.combine_texts()
+
+    try:
+        comp.conclusion = await researcher.generate_conclusion(text)
+        text += '\n' + comp.conclusion
+    except Exception as er:
+        logger.error(er)
+
+    current_step += 1
+    await update_progress(websocket, current_step, total_steps)
+
+    try:
+        comp.summ = await researcher.get_executive_summary(text)
+    except Exception as er:
+        logger.error(er)
+
+    current_step += 1
+    await update_progress(websocket, current_step, total_steps)
+
+    try:
+        pptx_path = await comp.make_pptx()
+        pdf_path = await convert_pptx_to_pdf(pptx_path, OUTPUTS_DIR)
+    except Exception as er:
+        logger.error(er)
+        pptx_path = pdf_path = None
+
+    current_step += 1
+    await update_progress(websocket, current_step, total_steps)
+
+    if pptx_path and pdf_path:
+        return pptx_path.replace(BASE_DIR, ''), pdf_path.replace(BASE_DIR, '')
+    return None, None
 
 # 1-й вариант, 8 минут сборки
 async def qcheck_report_(websocket: WebSocket, task: str):
@@ -475,3 +663,5 @@ async def qcheck_report_(websocket: WebSocket, task: str):
 	await update_progress(websocket, current_step, total_steps)
 
 	return pptx_path.replace(BASE_DIR, ''), pdf_path.replace(BASE_DIR, '')
+
+
