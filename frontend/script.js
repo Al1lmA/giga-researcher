@@ -1,4 +1,8 @@
 const GPTResearcher = (() => {
+    let pollIntervalId = null;
+    let lastLogCount = 0;
+    let lastReportChunkCount = 0;
+
     const init = () => {
         document.getElementById("copyToClipboard").addEventListener("click", copyToClipboard);
         updateState("initial");
@@ -12,62 +16,99 @@ const GPTResearcher = (() => {
 
         addAgentResponse({ output: "Подготовка отчета ..." });
 
-        listenToSockEvents();
+        startTask();
     };
 
-    const listenToSockEvents = () => {
-        const { protocol, host, pathname } = window.location;
-        const ws_uri = `${protocol === 'https:' ? 'wss:' : 'ws:'}//${host}${pathname}ws`;
-        // const ws_uri = `${protocol === 'https:' ? 'wss:' : 'ws:'}//${host}/ws`;
+    const startTask = async () => {
         const converter = new showdown.Converter();
-        const socket = new WebSocket(ws_uri);
+        const task = document.querySelector('input[name="task"]').value;
+        const report_type = document.querySelector('select[name="report_type"]').value;
 
-        socket.onopen = (event) => {
-            console.log("WebSocket connection opened");
-            const task = document.querySelector('input[name="task"]').value;
-            const report_type = document.querySelector('select[name="report_type"]').value;
-            const requestData = {
-                task: task,
-                report_type: report_type
-            };
+        lastLogCount = 0;
+        lastReportChunkCount = 0;
+        clearPolling();
 
-            socket.send(`start ${JSON.stringify(requestData)}`);
-        };
+        try {
+            const response = await fetch('/api/tasks', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ task, report_type })
+            });
 
-        socket.onmessage = (event) => {
-            console.log("Message received from WebSocket:", event.data); // Debug
-            const data = JSON.parse(event.data);
-            console.log("Parsed data:", data); // Debug
-            if (data.type === 'logs') {
-                addAgentResponse(data);
-            } else if (data.type === 'report') {
-                writeReport(data, converter);
-            } else if (data.type === 'path') {
-                updateState("finished");
-                updateDownloadLink(data);
-            } else if (data.type === 'progress') {
-                updateProgressBar(data.output);
+            if (!response.ok) {
+                throw new Error('Не удалось запустить задачу');
             }
-        };
 
-        socket.onerror = (error) => {
-            console.error("WebSocket error observed:", error);
-            alert("Ошибка WebSocket. Попробуйте снова или обратитесь к администратору.");
-        };
+            const data = await response.json();
+            await pollTask(data.task_id, converter);
+            pollIntervalId = setInterval(() => pollTask(data.task_id, converter), 1500);
+        } catch (error) {
+            console.error("Task start error:", error);
+            updateState("error");
+            alert("Ошибка запуска задачи. Попробуйте снова или обратитесь к администратору.");
+        }
+    };
 
-        socket.onclose = (event) => {
-            console.log("WebSocket connection closed:", event);
-            const connectionLostMessage = "Соединение прервано...";
-            alert(connectionLostMessage);
+    const pollTask = async (taskId, converter) => {
+        try {
+            const response = await fetch(`/api/tasks/${taskId}`);
+            if (!response.ok) {
+                throw new Error('Не удалось получить статус задачи');
+            }
 
-            // Refresh the page
-            location.reload();
-        };
+            const data = await response.json();
+            syncLogs(data.logs || []);
+            syncReport(data.report_chunks || [], converter);
+            updateProgressBar(data.progress || 0);
+
+            if (data.result && data.result.output) {
+                updateDownloadLink(data.result);
+            }
+
+            if (data.status === 'finished') {
+                updateState("finished");
+                clearPolling();
+            } else if (data.status === 'failed') {
+                updateState("error");
+                clearPolling();
+                const errorMessage = data.error || "Ошибка выполнения задачи.";
+                addAgentResponse({ output: errorMessage });
+                alert(errorMessage);
+            }
+        } catch (error) {
+            console.error("Polling error:", error);
+            updateState("error");
+            clearPolling();
+            alert("Ошибка получения статуса задачи. Попробуйте снова.");
+        }
+    };
+
+    const clearPolling = () => {
+        if (pollIntervalId) {
+            clearInterval(pollIntervalId);
+            pollIntervalId = null;
+        }
+    };
+
+    const syncLogs = (logs) => {
+        for (let i = lastLogCount; i < logs.length; i += 1) {
+            addAgentResponse({ output: logs[i] });
+        }
+        lastLogCount = logs.length;
+    };
+
+    const syncReport = (reportChunks, converter) => {
+        for (let i = lastReportChunkCount; i < reportChunks.length; i += 1) {
+            writeReport({ output: reportChunks[i] }, converter);
+        }
+        lastReportChunkCount = reportChunks.length;
     };
 
     const addAgentResponse = (data) => {
         const output = document.getElementById("output");
-        console.log("Adding agent response:", data); // Debug
+        console.log("Adding agent response:", data);
         const div = document.createElement("div");
         div.className = "agent_response";
         div.innerHTML = data.output;
@@ -93,12 +134,11 @@ const GPTResearcher = (() => {
         const sourcesButton = document.getElementById("downloadSources");
         if (sources_path) {
             sourcesButton.setAttribute("href", sources_path);
-            sourcesButton.classList.remove("d-none"); 
+            sourcesButton.classList.remove("d-none");
         } else {
-            sourcesButton.classList.add("d-none"); 
+            sourcesButton.classList.add("d-none");
         }
     };
-    
 
     const updateProgressBar = (percentage) => {
         const progressBar = document.getElementById("progressBar");
@@ -108,7 +148,7 @@ const GPTResearcher = (() => {
     };
 
     const updateScroll = () => {
-        console.log("Updating scroll"); // Debug
+        console.log("Updating scroll");
         const output = document.getElementById("output");
         output.scrollTop = output.scrollHeight;
     };
@@ -176,7 +216,6 @@ const GPTResearcher = (() => {
         copyToClipboard,
     };
 })();
-
 // Функция для обработки авторизации
 function handleLogin(event) {
     event.preventDefault(); // Предотвращаем стандартную отправку формы
@@ -198,7 +237,6 @@ function handleLogin(event) {
 
                 const backTop = document.querySelector("#back-to-top");
                 backTop.classList.remove('d-none');
-                
             })
             .catch((error) => {
                 alert('Ошибка авторизации: ' + error.message);
@@ -207,7 +245,6 @@ function handleLogin(event) {
 
     return false; // Предотвращаем отправку формы
 }
-
 // Функция для отправки данных авторизации на сервер
 async function sendLoginData() {
     const usernameInput = document.getElementById('username');
@@ -226,11 +263,9 @@ async function sendLoginData() {
 
     if (response.ok) {
         return; // Авторизация успешна
-    } else {
-        throw new Error('Неверное имя пользователя или пароль.');
     }
+    throw new Error('Неверное имя пользователя или пароль.');
 }
-
 // Валидация полей формы авторизации
 function validateLoginForm() {
     const usernameInput = document.getElementById('username');
