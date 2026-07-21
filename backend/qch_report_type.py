@@ -1,4 +1,3 @@
-import os
 import asyncio
 import json
 import os
@@ -11,6 +10,15 @@ from modules.company import Company
 from modules.bfo import get_content_from_bfo, get_table_and_graph
 from backend.utils import convert_pptx_to_pdf, write_md_to_pdf
 from backend.mr_report_type import chain_with_source
+
+from operator import itemgetter
+
+from langchain_community.chat_models.gigachat import GigaChat
+from langchain_community.retrievers.yandex_search import YandexSearchAPIRetriever
+from langchain_community.utilities.yandex_search import YandexSearchAPIWrapper
+from langchain_core.output_parsers import StrOutputParser
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.runnables import RunnableLambda, RunnableParallel
 
 from concurrent.futures import ProcessPoolExecutor, TimeoutError as FuturesTimeoutError
 
@@ -273,7 +281,6 @@ async def qcheck_report(websocket: WebSocket, task: str):
 
 	return pptx_path.replace(BASE_DIR, ''), pdf_path.replace(BASE_DIR, '')
 """
-
 # от 05.11.2025
 async def safe_send(websocket: WebSocket, data: dict):
     """Безопасная отправка через FastAPI WebSocket."""
@@ -286,21 +293,115 @@ async def safe_send(websocket: WebSocket, data: dict):
         # Логируем другие ошибки
         print(f"Ошибка при отправке через WebSocket: {e}")
 
-async def safe_chain_invoke(chain, query: str, timeout: int = 300):
-    """Безопасный вызов chain.invoke в отдельном потоке с таймаутом."""
-    try:
-        logger.info(f"Выполняем запрос к chain: {query[:60]}...")
-        response = await asyncio.wait_for(
-            asyncio.to_thread(chain.invoke, {"question": query}),
-            timeout=timeout,
+def qch_format_docs(docs):
+    return "\n\n".join([doc.page_content[:2500] for doc in docs])
+
+
+async def chain_with_source_qch():
+    model = GigaChat(
+        model="GigaChat-2-Max",
+        verify_ssl_certs=False,
+        profanity_check=False,
+    )
+
+    api_wrapper = YandexSearchAPIWrapper()
+
+    # Для Q_CH не нужно 30 источников: это раздувает prompt и чаще даёт timeout.
+    retriever = YandexSearchAPIRetriever(api_wrapper=api_wrapper, k=12)
+
+    QA_TEMPLATE = """
+Подготовь раздел Quick-Check-Up по теме: "{question}".
+
+Требования:
+- пиши по делу, без общих фраз;
+- используй факты из найденной информации;
+- структура: 4-8 содержательных абзацев или маркированных пунктов;
+- обязательно упоминай конкретные продукты, технологии, клиентов, рынки или факты, если они есть в источниках;
+- не пиши слишком длинный текст;
+- не добавляй вводные комментарии вроде "ниже представлен отчет".
+
+Тема: "{question}"
+
+Информация:
+{context}
+"""
+
+    prompt = ChatPromptTemplate.from_template(QA_TEMPLATE)
+    output_parser = StrOutputParser()
+
+    chain_without_source = (
+        RunnableParallel(
+            {
+                "context": itemgetter("context") | RunnableLambda(qch_format_docs),
+                "question": itemgetter("question"),
+            }
         )
-        return response
-    except asyncio.TimeoutError:
-        logger.error(f"Таймаут при chain.invoke: {query}")
-        return {"answer": "Ошибка: превышено время ожидания ответа."}
-    except Exception as e:
-        logger.exception(f"Ошибка при chain.invoke: {e}")
-        return {"answer": "Ошибка при обращении к языковой модели."}
+        | prompt
+        | model
+        | output_parser
+    )
+
+    chain_with_source = (
+        RunnableParallel(
+            {
+                "context": itemgetter("question") | retriever,
+                "question": itemgetter("question"),
+            }
+        ).assign(answer=chain_without_source)
+    )
+
+    return chain_with_source
+
+async def safe_chain_invoke(
+    chain,
+    query: str,
+    timeout: int = 360,
+    retries: int = 3,
+    delay: int = 5,
+):
+    """
+    Безопасный вызов chain.invoke с повторами.
+    Нужно, чтобы Q_CH-разделы не превращались в слайды
+    'Ошибка при обращении к языковой модели' из-за разового timeout.
+    """
+    last_error = None
+
+    for attempt in range(1, retries + 1):
+        try:
+            logger.info(
+                f"[QCH CHAIN] attempt {attempt}/{retries}: {query[:120]}"
+            )
+
+            response = await asyncio.wait_for(
+                asyncio.to_thread(chain.invoke, {"question": query}),
+                timeout=timeout,
+            )
+
+            answer = response.get("answer", "")
+
+            if not answer or not answer.strip():
+                raise ValueError("Пустой ответ от языковой модели")
+
+            return response
+
+        except Exception as er:
+            last_error = er
+            logger.exception(
+                f"[QCH CHAIN] failed attempt {attempt}/{retries}: {query}"
+            )
+
+            if attempt < retries:
+                await asyncio.sleep(delay)
+
+    logger.error(f"[QCH CHAIN] all attempts failed: {query}. Last error: {last_error}")
+
+    return {
+        "answer": (
+            "Раздел не был сформирован из-за ошибки или таймаута запроса "
+            "к языковой модели. Подробности см. в логах сервера."
+        ),
+        "context": [],
+    }
 
 async def qcheck_report(websocket: WebSocket, task: str):
     comp = Company(inn=task)
@@ -316,7 +417,7 @@ async def qcheck_report(websocket: WebSocket, task: str):
     except Exception as er:
         logger.error(er)
         await safe_send(websocket, {"type": "logs", "output": f"\nОшибка при получении данных из ЕГРЮЛ\nПроверьте ИНН"})
-        return None, None
+        return
 
     current_step += 1
     await update_progress(websocket, current_step, total_steps)
@@ -348,7 +449,7 @@ async def qcheck_report(websocket: WebSocket, task: str):
     #  GPT / Gigachat
     # =====================
     researcher = GPTResearcher(config_path=None, websocket=websocket)
-    chain = await chain_with_source()
+    chain = await chain_with_source_qch()
 
     # ---------- О компании ----------
     query = f'Основная информация о компании {comp.org_name}, {comp.inn}'
@@ -413,7 +514,7 @@ async def qcheck_report(websocket: WebSocket, task: str):
             await safe_send(websocket, {"type": "report", "output": response['answer']})
         except WebSocketDisconnect:
             logger.warning("Клиент отключился — прекращаем анализ.")
-            return None, None
+            return
         except Exception as er:
             logger.error(er)
 
@@ -458,6 +559,7 @@ async def qcheck_report(websocket: WebSocket, task: str):
     if pptx_path and pdf_path:
         return pptx_path.replace(BASE_DIR, ''), pdf_path.replace(BASE_DIR, '')
     return None, None
+#
 
 # 1-й вариант, 8 минут сборки
 async def qcheck_report_(websocket: WebSocket, task: str):
@@ -663,5 +765,3 @@ async def qcheck_report_(websocket: WebSocket, task: str):
 	await update_progress(websocket, current_step, total_steps)
 
 	return pptx_path.replace(BASE_DIR, ''), pdf_path.replace(BASE_DIR, '')
-
-

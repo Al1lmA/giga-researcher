@@ -118,9 +118,27 @@ const GPTResearcher = (() => {
         updateScroll();
     };
 
+    const normalizeMarkdownChunk = (chunk) => {
+        if (!chunk) {
+            return "";
+        }
+
+        let normalized = chunk.replace(/\r\n/g, "\n");
+        normalized = normalized.replace(/\n{3,}/g, "\n\n");
+        normalized = normalized.replace(/^\s*[-*•]\s+/gm, "- ");
+        normalized = normalized.replace(/^\s*(\d+)[\.\)]\s*/gm, "$1. ");
+
+        if (lastReportChunkCount > 0) {
+            normalized = normalized.replace(/^\n+/, "");
+            normalized = `\n\n${normalized}`;
+        }
+
+        return normalized;
+    };
+
     const writeReport = (data, converter) => {
         const reportContainer = document.getElementById("reportContainer");
-        const markdownOutput = converter.makeHtml(data.output);
+        const markdownOutput = converter.makeHtml(normalizeMarkdownChunk(data.output));
         reportContainer.innerHTML += markdownOutput;
         updateScroll();
     };

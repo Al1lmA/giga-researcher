@@ -21,9 +21,22 @@ OUTPUTS_DIR = os.path.join(BASE_DIR, "outputs")
 TEXT_BOX_LEFT = Inches(0.5)
 TEXT_BOX_TOP = Inches(1)
 TEXT_BOX_WIDTH = Inches(6.7)
-TEXT_BOX_HEIGHT = Inches(2)
+TEXT_BOX_HEIGHT = Inches(7.2)
 TEXT_FONT_SIZE = Pt(14)
 TEXT_FONT_NAME = "SB Sans Display"
+
+HEADING_RE = re.compile(r"^\s{0,3}#{1,6}\s+(.+?)\s*$")
+ORDERED_LIST_RE = re.compile(r"^(\s*)(\d+)[\.\)]\s+(.*\S)\s*$")
+BULLET_LIST_RE = re.compile(r"^(\s*)[-*•]\s+(.*\S)\s*$")
+LATEX_FOOTNOTE_RE = re.compile(r"\$\{\s*\}\^\{(\d+)\}\$")
+MARKDOWN_FOOTNOTE_RE = re.compile(r"\[\^(\d+)[\^]?\]")
+INLINE_FORMAT_RE = re.compile(r"(\*\*\*.+?\*\*\*|\*\*.+?\*\*|\*.+?\*)")
+SENTENCE_SPLIT_RE = re.compile(
+    r"(?<!\b[А-ЯA-Z])"
+    r"(?<!\b[А-ЯA-Z]\.)"
+    r"(?<!\b[а-яa-z]{1})"
+    r"(?<=[.!?])\s+"
+)
 
 def safe_filename(name: str, fallback: str = "report") -> str:  ##исправление бага имени на винде, на сервер подгружать НЕ НАДО 
         """
@@ -38,6 +51,345 @@ def safe_filename(name: str, fallback: str = "report") -> str:  ##исправл
         name = name.rstrip(". ")
 
         return name[:150] or fallback
+
+
+def normalize_report_text(text: str) -> str:
+        if not text:
+            return ""
+
+        normalized = text.replace("\r\n", "\n").replace("\r", "\n")
+        normalized = re.sub(r"[ \t]+\n", "\n", normalized)
+        normalized = re.sub(r"\n{3,}", "\n\n", normalized)
+        normalized = re.sub(r"^\s*[-*•]\s+", "- ", normalized, flags=re.MULTILINE)
+        normalized = re.sub(r"^\s*(\d+)[\.\)]\s*", r"\1. ", normalized, flags=re.MULTILINE)
+        return normalized.strip()
+
+
+def clean_report_text(text: str, preserve_inline_markup: bool = False) -> str:
+        if text is None:
+            return ""
+
+        invisible_translation = str.maketrans({
+            "\ufeff": " ",
+            "\ufffe": " ",
+            "\u2060": " ",
+            "\u200b": " ",
+            "\u200c": " ",
+            "\u200d": " ",
+            "\ufffc": " ",
+        })
+        cleaned = str(text).translate(invisible_translation)
+        
+        cleaned = cleaned.replace("\x0b", " ").replace("\xa0", " ")
+        cleaned = LATEX_FOOTNOTE_RE.sub(lambda m: f"[{m.group(1)}]", cleaned)
+        cleaned = MARKDOWN_FOOTNOTE_RE.sub(lambda m: f"[{m.group(1)}]", cleaned)
+        cleaned = re.sub(r"[ \t]*[-]{3,}[ \t]*", " ", cleaned)
+        cleaned = re.sub(r"^\s{0,3}>\s?", "", cleaned, flags=re.MULTILINE)
+        if not preserve_inline_markup:
+            cleaned = re.sub(r"(\*\*\*|\*\*|\*)(.+?)\1", r"\2", cleaned)
+            cleaned = re.sub(r"(__|_)(.+?)\1", r"\2", cleaned)
+            cleaned = cleaned.replace("**", "").replace("__", "").replace("*", "")
+        cleaned = re.sub(r"[ \t]+\n", "\n", cleaned)
+        cleaned = re.sub(r"\n[ \t]+", "\n", cleaned)
+        cleaned = re.sub(r"[ \t]{2,}", " ", cleaned)
+        cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+        cleaned = re.sub(r"\$\s*\{\s*\}\s*\$", "", cleaned)
+        cleaned = re.sub(r"\$\s*\{\s*\}\s*\^\s*\$", "", cleaned)
+        cleaned = re.sub(r"\$\s*\$", "", cleaned)
+        return cleaned.strip()
+
+
+def format_display_value(value) -> str:
+        if value is None:
+            return "Нет данных"
+
+        if isinstance(value, str):
+            cleaned = clean_report_text(value)
+            if not cleaned or cleaned.lower() == "n/a":
+                return "Нет данных"
+
+            compact = cleaned.replace(" ", "")
+            if re.fullmatch(r"-?\d+(?:\.0+)?", compact):
+                return f"{int(float(compact)):,}".replace(",", " ")
+            return cleaned
+
+        if isinstance(value, (int, numpy.integer)):
+            return f"{int(value):,}".replace(",", " ")
+
+        if isinstance(value, float):
+            if math.isnan(value):
+                return "Нет данных"
+            if value.is_integer():
+                return f"{int(value):,}".replace(",", " ")
+            return clean_report_text(str(value))
+
+        cleaned = clean_report_text(str(value))
+        return cleaned or "Нет данных"
+
+
+def split_inline_format_runs(text: str):
+        prepared = clean_report_text(text, preserve_inline_markup=True)
+        if not prepared:
+            return []
+
+        parts = []
+        position = 0
+        for match in INLINE_FORMAT_RE.finditer(prepared):
+            start, end = match.span()
+            if start > position:
+                plain = prepared[position:start]
+                if plain:
+                    parts.append((plain, False, False))
+
+            token = match.group(0)
+            if token.startswith("***") and token.endswith("***"):
+                parts.append((token[3:-3], True, True))
+            elif token.startswith("**") and token.endswith("**"):
+                parts.append((token[2:-2], True, False))
+            else:
+                parts.append((token[1:-1], False, True))
+            position = end
+
+        if position < len(prepared):
+            tail = prepared[position:]
+            if tail:
+                parts.append((tail, False, False))
+
+        return [(fragment, bold, italic) for fragment, bold, italic in parts if fragment]
+
+
+def is_short_subheading(text: str, next_block=None) -> bool:
+        plain = clean_report_text(text).strip()
+        if not plain or not next_block:
+            return False
+        if len(plain) > 60 or len(plain.split()) > 6:
+            return False
+        if plain.endswith((".", "!", "?", ";")):
+            return False
+        if "," in plain:
+            return False
+        return next_block[0] in {"paragraph", "list"}
+
+
+def write_pptx_runs(paragraph, text: str, *, base_bold: bool = False, base_italic: bool = False):
+        paragraph.text = ""
+        parts = split_inline_format_runs(text)
+        if not parts:
+            parts = [(clean_report_text(text), False, False)]
+
+        for fragment, bold, italic in parts:
+            run = paragraph.add_run()
+            run.text = fragment
+            run.font.size = TEXT_FONT_SIZE
+            run.font.name = TEXT_FONT_NAME
+            run.font.bold = base_bold or bold
+            run.font.italic = base_italic or italic
+
+
+def write_docx_runs(paragraph, text: str, *, base_bold: bool = False, base_italic: bool = False):
+        parts = split_inline_format_runs(text)
+        if not parts:
+            parts = [(clean_report_text(text), False, False)]
+
+        for fragment, bold, italic in parts:
+            run = paragraph.add_run(fragment)
+            run.bold = base_bold or bold
+            run.italic = base_italic or italic
+
+
+def iter_text_blocks(text: str):
+        prepared_lines = []
+        for raw_line in normalize_report_text(clean_report_text(text, preserve_inline_markup=True)).split("\n"):
+            indent = len(raw_line) - len(raw_line.lstrip(" "))
+            line = raw_line.strip()
+            if not line:
+                continue
+
+            heading_match = HEADING_RE.match(line)
+            if heading_match:
+                prepared_lines.append(("heading", heading_match.group(1).strip(), 0))
+                continue
+
+            ordered_match = ORDERED_LIST_RE.match(raw_line)
+            if ordered_match:
+                prepared_lines.append(("list", f"{ordered_match.group(2)}. {ordered_match.group(3).strip()}", min(indent // 2, 4)))
+                continue
+
+            bullet_match = BULLET_LIST_RE.match(raw_line)
+            if bullet_match:
+                prepared_lines.append(("list", f"- {bullet_match.group(2).strip()}", min(indent // 2, 4)))
+                continue
+
+            prepared_lines.append(("paragraph", line, 0))
+
+        for index, block in enumerate(prepared_lines):
+            next_block = prepared_lines[index + 1] if index + 1 < len(prepared_lines) else None
+            if block[0] == "paragraph" and is_short_subheading(block[1], next_block):
+                yield "subheading", block[1], block[2]
+            else:
+                yield block
+
+
+def estimate_block_units(block, chars_per_line: int) -> float:
+        block_type, text, level = block
+        effective_chars = chars_per_line
+        if block_type == "list":
+            effective_chars = max(18, chars_per_line - level * 6)
+        elif block_type == "heading":
+            effective_chars = max(18, chars_per_line - 8)
+        elif block_type == "subheading":
+            effective_chars = max(18, chars_per_line - 4)
+
+        plain_text = clean_report_text(text)
+        segments = plain_text.split("\n") if plain_text else [""]
+        visual_lines = 0
+        for segment in segments:
+            segment = segment.strip()
+            if not segment:
+                visual_lines += 1
+            else:
+                visual_lines += max(1, math.ceil(len(segment) / effective_chars))
+
+        spacing = 0.55 if block_type == "heading" else 0.35 if block_type == "subheading" else 0.2
+        if block_type == "list":
+            spacing = 0.15
+        return visual_lines + spacing
+
+
+def page_units(blocks, chars_per_line: int) -> float:
+        return sum(estimate_block_units(block, chars_per_line) for block in blocks)
+
+def move_trailing_heading_to_next_page(pages):
+        """
+        Не оставляет heading/subheading последней строкой страницы.
+        Если страница заканчивается подзаголовком, переносим его
+        в начало следующей страницы.
+        """
+        if len(pages) < 2:
+            return pages
+
+        fixed_pages = []
+
+        for page in pages:
+            if not page:
+                continue
+
+            if fixed_pages and fixed_pages[-1] and fixed_pages[-1][-1][0] in {"heading", "subheading"}:
+                trailing_heading = fixed_pages[-1].pop()
+
+                if fixed_pages[-1]:
+                    page.insert(0, trailing_heading)
+                else:
+                    fixed_pages.pop()
+                    page.insert(0, trailing_heading)
+
+            fixed_pages.append(page)
+
+        return fixed_pages
+
+def split_paragraph_block(block, available_units: float, chars_per_line: int):
+        block_type, text, level = block
+        if block_type not in {"paragraph", "subheading"}:
+            return None, block
+
+        if available_units < 2.0:
+            return None, block
+
+        sentences = SENTENCE_SPLIT_RE.split(text)
+        sentences = [sentence.strip() for sentence in sentences if sentence.strip()]
+        if len(sentences) <= 1:
+            sentences = re.split(r"(?<=[;:])\s+", text)
+            sentences = [sentence.strip() for sentence in sentences if sentence.strip()]
+
+        if len(sentences) <= 1:
+            words = text.split()
+            if not words:
+                return None, block
+
+            pieces = []
+            current_words = []
+            target_chars = max(chars_per_line, int(chars_per_line * max(1.0, available_units - 0.3)))
+            for word in words:
+                candidate = " ".join(current_words + [word]).strip()
+                if current_words and len(clean_report_text(candidate)) > target_chars:
+                    pieces.append(" ".join(current_words))
+                    current_words = [word]
+                else:
+                    current_words.append(word)
+            if current_words:
+                pieces.append(" ".join(current_words))
+            sentences = pieces
+
+        head_parts = []
+        tail_parts = []
+        for sentence in sentences:
+            candidate_parts = head_parts + [sentence]
+            candidate_text = " ".join(candidate_parts).strip()
+            candidate_block = (block_type, candidate_text, level)
+            if estimate_block_units(candidate_block, chars_per_line) <= available_units:
+                head_parts = candidate_parts
+            else:
+                tail_parts.append(sentence)
+
+        if not head_parts or not tail_parts:
+            return None, block
+
+        head_block = (block_type, " ".join(head_parts).strip(), level)
+        tail_block = (block_type, " ".join(tail_parts).strip(), level)
+        return head_block, tail_block
+
+
+def paginate_text_blocks(text_blocks, *, chars_per_line: int, max_units: float, min_tail_units: float = 3.0):
+        work_blocks = list(text_blocks)
+        if not work_blocks:
+            return []
+
+        pages = []
+        current_page = []
+        current_units = 0.0
+        index = 0
+
+        while index < len(work_blocks):
+            block = work_blocks[index]
+            next_block = work_blocks[index + 1] if index + 1 < len(work_blocks) else None
+            block_units = estimate_block_units(block, chars_per_line)
+            reserved_units = 0.0
+
+            if block[0] in {"heading", "subheading"} and next_block:
+                reserved_units = min(estimate_block_units(next_block, chars_per_line), 2.6)
+
+            available_units = max_units - current_units
+
+            if current_page and block_units + reserved_units > available_units:
+                split_head, split_tail = split_paragraph_block(block, available_units, chars_per_line)
+                if split_head and split_tail:
+                    current_page.append(split_head)
+                    current_units += estimate_block_units(split_head, chars_per_line)
+                    work_blocks[index] = split_tail
+                pages.append(current_page)
+                current_page = []
+                current_units = 0.0
+                continue
+
+            current_page.append(block)
+            current_units += block_units
+            index += 1
+
+        if current_page:
+            pages.append(current_page)
+
+        pages = move_trailing_heading_to_next_page(pages)
+
+        if len(pages) >= 2:
+            last_units = page_units(pages[-1], chars_per_line)
+            previous_units = page_units(pages[-2], chars_per_line)
+            if last_units <= min_tail_units and previous_units + last_units <= max_units:
+                pages[-2].extend(pages[-1])
+                pages.pop()
+                pages = move_trailing_heading_to_next_page(pages)
+
+
+        return pages
 
 class Company():
     """This is a class for the company"""
@@ -106,69 +458,37 @@ class Company():
 
     async def add_text(self, prs, title, text):
         try:
-            # Создаем новый слайд
-            slide = prs.slides.add_slide(prs.slide_layouts[1])
-            slide.shapes.title.text = title
+            text_blocks = list(iter_text_blocks(text))
+            if not text_blocks:
+                return prs
 
-            # Создаем текстовый блок
-            text_box = slide.shapes.add_textbox(TEXT_BOX_LEFT, TEXT_BOX_TOP, TEXT_BOX_WIDTH, TEXT_BOX_HEIGHT)
-            text_frame = text_box.text_frame
-            text_frame.word_wrap = True
-            text_frame.paragraphs[0].font.size = TEXT_FONT_SIZE
-            text_frame.paragraphs[0].font.name = TEXT_FONT_NAME
-            text_frame.paragraphs[0].alignment = PP_ALIGN.LEFT  # Выравнивание текста по левому краю
+            page_blocks = paginate_text_blocks(
+                text_blocks,
+                chars_per_line=48,
+                max_units=41.0,
+                min_tail_units=8.5,
+            )
 
-            # Разбиваем текст на строки и добавляем их в текстовый блок
-            text_lines = text.split('\n') # self.split_text(text)
-            
-            current_slide = slide
-            current_text_frame = text_frame
-            
+            for page_index, page in enumerate(page_blocks):
+                slide = prs.slides.add_slide(prs.slide_layouts[1])
 
-            pattern = r'\*\*(.*?)\*\*'
-
-            for line in text_lines:
-                if len(current_text_frame.paragraphs) >= 6:  # Максимальное количество абзацев в текстовом блоке
-                    total_characters = sum(len(paragraph.text) for paragraph in current_text_frame.paragraphs)
-
-                    if total_characters + len(line) > 1000: # Максимальное количество символов на слайде
-                        # Если текст не помещается в текстовый блок, создаем новый слайд
-                        current_slide = prs.slides.add_slide(prs.slide_layouts[1])
-                        current_text_frame = current_slide.shapes.add_textbox(TEXT_BOX_LEFT, TEXT_BOX_TOP, TEXT_BOX_WIDTH, TEXT_BOX_HEIGHT).text_frame
-                        current_text_frame.word_wrap = True
-                        current_text_frame.paragraphs[0].font.size = TEXT_FONT_SIZE
-                        current_text_frame.paragraphs[0].font.name = TEXT_FONT_NAME
-                        current_text_frame.paragraphs[0].alignment = PP_ALIGN.LEFT
-
-                if line.startswith('#'):
-                    # Добавляем заголовок
-                    p = current_text_frame.add_paragraph()
-                    p.text = line.replace('#', '').strip()
-                    p.font.bold = True
-                    p.font.size = TEXT_FONT_SIZE
-                    p.font.name = TEXT_FONT_NAME
-                
+                if page_index == 0:
+                    slide.shapes.title.text = title
                 else:
-                    # Добавляем обычный текст
-                    p = current_text_frame.add_paragraph()
-                    p.font.size = TEXT_FONT_SIZE
-                    p.font.name = TEXT_FONT_NAME
-                    match = re.search(pattern, line)
-                    if re.match(r'^\d+\.', line) or match:
-                        # Если строка соответствует регулярному выражению или является нумерованным списком, добавляем ее жирным
-                        text_list = line.split(':')
-                        if text_list.__len__() == 1:
-                            text_list = line.split('-')
-                        p.text = text_list[0].replace('*', '').strip()
-                        p.level = 1
-                        p.font.bold = True
-                        for i, item in enumerate(text_list[1:], start=2):
-                            p = current_text_frame.add_paragraph()
-                            p.text = item.replace('*', '').strip()
-                            p.font.size = TEXT_FONT_SIZE
-                            p.font.name = TEXT_FONT_NAME
-                    else:
-                        p.text = line.strip()
+                    slide.shapes.title.text = ""
+
+                text_box = slide.shapes.add_textbox(TEXT_BOX_LEFT, TEXT_BOX_TOP, TEXT_BOX_WIDTH, TEXT_BOX_HEIGHT)
+                text_frame = text_box.text_frame
+                text_frame.word_wrap = True
+                text_frame.paragraphs[0].font.size = TEXT_FONT_SIZE
+                text_frame.paragraphs[0].font.name = TEXT_FONT_NAME
+                text_frame.paragraphs[0].alignment = PP_ALIGN.LEFT
+
+                for block_type, line, level in page:
+                    p = text_frame.add_paragraph()
+                    write_pptx_runs(p, line, base_bold=(block_type in {"heading", "subheading"}))
+                    if block_type == "list":
+                        p.level = level + 1
                     
 
                 
@@ -206,7 +526,7 @@ class Company():
         slide = prs.slides[0] 
         table = slide.shapes[1].table  
 
-        slide.shapes[0].text = f'Карточка компании\x0b«{self.org_name}»'
+        slide.shapes[0].text = f'Карточка компании\x0b«{clean_report_text(self.org_name)}»'
         title_text_frame = slide.shapes[0].text_frame
         title_text_frame.paragraphs[0].font.name = TEXT_FONT_NAME  # Задание шрифта "SB Sans Display"
         title_text_frame.paragraphs[0].font.bold = True  # Жирный шрифт
@@ -220,20 +540,20 @@ class Company():
                 if key == 'Год основания компании':
                     # Проверяем наличие ключа в data
                     if 'Год основания компании' in data:
-                        row.cells[1].text = str(data['Год основания компании'])
+                        row.cells[1].text = format_display_value(data['Год основания компании'])
                     elif 'Дата регистрации компании' in data:
                         # Меняем текст на 'Дата регистрации компании' и заполняем значение
                         row.cells[0].text = 'Дата регистрации компании'
                         row.cells[0].text_frame.paragraphs[0].font.size = Pt(11)
                         row.cells[0].text_frame.paragraphs[0].font.bold = True
                         row.cells[0].text_frame.paragraphs[0].font.name = "SB Sans Display Semibold"
-                        row.cells[1].text = str(data['Дата регистрации компании'])
+                        row.cells[1].text = format_display_value(data['Дата регистрации компании'])
                 else:
-                        row.cells[1].text = str(data[str(key)])
+                        row.cells[1].text = format_display_value(data.get(str(key)))
                     
             except Exception as er:
                     logger.error(er)
-                    row.cells[1].text = 'n/a'
+                    row.cells[1].text = 'Нет данных'
 
             row.cells[1].text_frame.paragraphs[0].font.size = Pt(11)
             row.cells[0].text_frame.paragraphs[0].font.color.rgb = RGBColor(255, 255, 255)
@@ -265,7 +585,7 @@ class Company():
                 # Заполнение заголовков новой таблицы
                 for col_num, column in enumerate(df.columns):
                     cell = new_table.cell(0, col_num)
-                    cell.text = column
+                    cell.text = clean_report_text(column)
                     for paragraph in cell.text_frame.paragraphs:
                         for run in paragraph.runs:
                             run.font.size = Pt(13)
@@ -277,11 +597,11 @@ class Company():
                         cell = new_table.cell(row_num+1, col_num)
                         if isinstance(value, (int, float, numpy.int64)):
                             if math.isnan(value):
-                                cell.text = '-'
+                                cell.text = 'Нет данных'
                             else:
                                 cell.text = "{:,.0f} тыс. ₽".format(value)
                         else:
-                            cell.text = str(value)
+                            cell.text = format_display_value(value)
                         for paragraph in cell.text_frame.paragraphs:
                             paragraph.alignment = PP_ALIGN.CENTER
                             for run in paragraph.runs:
@@ -359,22 +679,24 @@ class Company():
         try:
             doc = Document()
 
-            doc.add_heading(self.org_name, 0)
+            doc.add_heading(clean_report_text(self.org_name), 0)
 
             doc.add_heading('Карточка компании', 1)
             table = doc.add_table(rows=1, cols=2)
             table.style = 'Table Grid' 
             for o in self.card:
                 row_cells = table.add_row().cells
-                row_cells[0].text = o
-                row_cells[1].text = self.card[o]
+                row_cells[0].text = clean_report_text(o)
+                row_cells[1].text = format_display_value(self.card[o])
 
         except Exception as er:
             logger.error(er)
 
         try:
             doc.add_heading('О компании', 1)
-            doc.add_paragraph(self.text_o_kompanii)
+            for block_type, paragraph_text, _ in iter_text_blocks(self.text_o_kompanii):
+                paragraph = doc.add_paragraph()
+                write_docx_runs(paragraph, paragraph_text, base_bold=(block_type in {"heading", "subheading"}))
         except Exception as er:
             logger.error(er)
 
@@ -383,11 +705,11 @@ class Company():
             t = doc.add_table(self.table.shape[0]+1, self.table.shape[1])
 
             for j in range(self.table.shape[-1]):
-                t.cell(0,j).text = self.table.columns[j]
+                t.cell(0,j).text = clean_report_text(self.table.columns[j])
 
             for i in range(self.table.shape[0]):
                 for j in range(self.table.shape[-1]):
-                    t.cell(i+1,j).text = str(self.table.values[i,j])
+                    t.cell(i+1,j).text = format_display_value(self.table.values[i,j])
 
             buffer = BytesIO(self.graph)
             doc.add_picture(buffer, width = docx.shared.Cm(17))
@@ -396,37 +718,49 @@ class Company():
         
         try:
             doc.add_heading('Продукты и услуги', 1)
-            doc.add_paragraph(self.products)
+            for block_type, paragraph_text, _ in iter_text_blocks(self.products):
+                paragraph = doc.add_paragraph()
+                write_docx_runs(paragraph, paragraph_text, base_bold=(block_type in {"heading", "subheading"}))
         except Exception as er:
             logger.error(er)
         
         try:
             doc.add_heading('Клиенты', 1)
-            doc.add_paragraph(self.customers)
+            for block_type, paragraph_text, _ in iter_text_blocks(self.customers):
+                paragraph = doc.add_paragraph()
+                write_docx_runs(paragraph, paragraph_text, base_bold=(block_type in {"heading", "subheading"}))
         except Exception as er:
             logger.error(er)
         
         try:
             doc.add_heading('Отзывы', 1)
-            doc.add_paragraph(self.feedback)
+            for block_type, paragraph_text, _ in iter_text_blocks(self.feedback):
+                paragraph = doc.add_paragraph()
+                write_docx_runs(paragraph, paragraph_text, base_bold=(block_type in {"heading", "subheading"}))
         except Exception as er:
             logger.error(er)
 
         try:
             doc.add_heading('Вакансии', 1)
-            doc.add_paragraph(self.team)
+            for block_type, paragraph_text, _ in iter_text_blocks(self.team):
+                paragraph = doc.add_paragraph()
+                write_docx_runs(paragraph, paragraph_text, base_bold=(block_type in {"heading", "subheading"}))
         except Exception as er:
             logger.error(er)
 
         try:
             doc.add_heading('Конкуренты', 1)
-            doc.add_paragraph(self.competitors)
+            for block_type, paragraph_text, _ in iter_text_blocks(self.competitors):
+                paragraph = doc.add_paragraph()
+                write_docx_runs(paragraph, paragraph_text, base_bold=(block_type in {"heading", "subheading"}))
         except Exception as er:
             logger.error(er)
 
         try:
             doc.add_heading('Тренды', 1)
-            doc.add_paragraph(self.trends)
+            for block_type, paragraph_text, _ in iter_text_blocks(self.trends):
+                paragraph = doc.add_paragraph()
+                write_docx_runs(paragraph, paragraph_text, base_bold=(block_type in {"heading", "subheading"}))
         except Exception as er:
             logger.error(er)
         
